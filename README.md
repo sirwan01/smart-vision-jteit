@@ -27,6 +27,23 @@ Kamera kelas ──(JPEG tiap n detik)──► API FastAPI ──► YuNet (det
 
 Pada CPU 4 inti, satu bingkai berisi beberapa wajah diproses sekitar 50 ms.
 
+## Demo cepat di GitHub Codespaces
+
+Untuk presentasi atau uji coba tanpa server, buka repositori di GitHub →
+**Code → Codespaces → Create codespace on main**. Konfigurasi `.devcontainer/`
+otomatis memasang dependensi dan model, membuat akun admin demo dengan kata sandi
+acak (tersimpan di `data/akun-demo.txt`, tidak ikut ter-commit), lalu menjalankan
+server. Alamat HTTPS tampil di terminal, misalnya
+`https://<nama-codespace>-8000.app.github.dev/dasbor`; kamera di peramban berfungsi
+karena alamatnya HTTPS.
+
+- Port bawaan **Private** (hanya akun GitHub Anda). Untuk dibuka peserta demo:
+  tab **PORTS** → port 8000 → klik kanan → *Port Visibility* → *Public*. Kembalikan
+  ke *Private* setelah demo.
+- Codespace berhenti sendiri bila tidak dipakai, dan memakai kuota jam GitHub Anda.
+- **Hanya untuk data contoh atau relawan yang setuju.** Data wajah seluruh mahasiswa
+  harus berada di server yang dikendalikan universitas (lihat panduan pemasangan).
+
 ## Menjalankan
 
 ```bash

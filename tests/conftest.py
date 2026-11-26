@@ -60,7 +60,11 @@ def buat_akun(username, peran="dosen", nama=None, sandi=SANDI):
 @pytest.fixture
 def lingkungan(tmp_path, monkeypatch, mesin):
     monkeypatch.setenv("DB_PATH", str(tmp_path / "uji.db"))
-    monkeypatch.delenv("API_KEY", raising=False)
+    # Uji selalu memakai konfigurasi bawaan, apa pun variabel lingkungan mesinnya
+    # (mis. devcontainer/produksi menyetel WAJIB_HIDUP_AKTIF_DAFTAR=1).
+    for nama in ("API_KEY", "WAJIB_HIDUP_AKTIF_DAFTAR", "COOKIE_AMAN", "ANTI_SPOOFING",
+                 "AMBANG_KEMIRIPAN", "AMBANG_HIDUP", "AMBANG_DETEKSI"):
+        monkeypatch.delenv(nama, raising=False)
     main.settings.cache_clear()
     auth.pembatas.reset()
     main.app.dependency_overrides[main.get_engine] = lambda: mesin

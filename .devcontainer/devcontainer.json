@@ -1,0 +1,19 @@
+{
+  "name": "Smart Vision JTEIT (demo)",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
+  "hostRequirements": { "cpus": 2, "memory": "4gb" },
+  "containerEnv": {
+    "TZ": "Asia/Makassar",
+    "WAJIB_HIDUP_AKTIF_DAFTAR": "1"
+  },
+  "postCreateCommand": "bash .devcontainer/siapkan.sh",
+  "postAttachCommand": "bash .devcontainer/jalankan.sh",
+  "forwardPorts": [8000],
+  "portsAttributes": {
+    "8000": { "label": "Dasbor Presensi", "onAutoForward": "notify" }
+  },
+  "customizations": {
+    "codespaces": { "openFiles": ["README.md"] },
+    "vscode": { "extensions": ["ms-python.python"] }
+  }
+}
