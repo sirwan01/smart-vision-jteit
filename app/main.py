@@ -3,6 +3,7 @@
 import csv
 import hmac
 import io
+import re
 import sqlite3
 from functools import lru_cache
 from pathlib import Path
@@ -97,9 +98,18 @@ class MahasiswaBaru(BaseModel):
 
 
 class SesiBaru(BaseModel):
-    kode_mk: str = Field(min_length=1)
-    nama_mk: str = Field(min_length=1)
     ruang: str = Field(min_length=1)
+    kelas_id: int | None = None  # bila diisi, kode & nama MK diambil dari kelas
+    kode_mk: str | None = None
+    nama_mk: str | None = None
+
+
+class KelasBaru(BaseModel):
+    kode_mk: str = Field(min_length=1, max_length=20)
+    nama_mk: str = Field(min_length=1)
+    nama_kelas: str = Field(min_length=1, max_length=20)
+    semester: str = Field(min_length=1, max_length=30, examples=["2026/2027 Ganjil"])
+    dosen_id: int | None = None  # hanya admin; bawaan = pembuat
 
 
 class DataMasuk(BaseModel):
@@ -138,10 +148,23 @@ def ambil_sesi(conn: sqlite3.Connection, sesi_id: int, p: Pengguna | None) -> sq
 
     Sesi milik dosen lain dijawab 404 agar keberadaannya tidak bocor.
     """
-    sesi = conn.execute("SELECT * FROM sesi WHERE id = ?", (sesi_id,)).fetchone()
+    sesi = conn.execute(
+        "SELECT s.*, k.nama_kelas, k.semester FROM sesi s LEFT JOIN kelas k ON k.id = s.kelas_id "
+        "WHERE s.id = ?", (sesi_id,)
+    ).fetchone()
     if sesi is None or (p is not None and not p.admin and sesi["dosen_id"] != p.id):
         raise HTTPException(404, "Sesi tidak ditemukan")
     return sesi
+
+
+def ambil_kelas(conn: sqlite3.Connection, kelas_id: int, p: Pengguna) -> sqlite3.Row:
+    k = conn.execute(
+        "SELECT k.*, u.nama AS dosen FROM kelas k JOIN pengguna u ON u.id = k.dosen_id "
+        "WHERE k.id = ?", (kelas_id,)
+    ).fetchone()
+    if k is None or (not p.admin and k["dosen_id"] != p.id):
+        raise HTTPException(404, "Kelas tidak ditemukan")
+    return k
 
 
 def filter_pemilik(p: Pengguna, alias: str = "s") -> tuple[str, list]:
@@ -286,11 +309,35 @@ def daftar_mahasiswa(m: MahasiswaBaru, conn=Depends(get_db)):
 @app.get("/mahasiswa", dependencies=[Login])
 def daftar_semua_mahasiswa(conn=Depends(get_db)):
     rows = conn.execute(
-        "SELECT m.nim, m.nama, m.prodi, COUNT(w.id) AS jumlah_wajah "
+        "SELECT m.nim, m.nama, m.prodi, m.persetujuan_pada, COUNT(w.id) AS jumlah_wajah "
         "FROM mahasiswa m LEFT JOIN wajah w ON w.nim = m.nim "
         "GROUP BY m.nim ORDER BY m.nim"
     ).fetchall()
-    return [dict(r) for r in rows]
+    return [{**dict(r), "persetujuan": r["persetujuan_pada"] is not None} for r in rows]
+
+
+@app.post("/mahasiswa/{nim}/persetujuan", dependencies=[Login])
+def catat_persetujuan(nim: str, conn=Depends(get_db)):
+    """Catat persetujuan biometrik mahasiswa (mis. yang masuk lewat impor KRS)."""
+    if conn.execute("SELECT 1 FROM mahasiswa WHERE nim = ?", (nim,)).fetchone() is None:
+        raise HTTPException(404, "Mahasiswa tidak ditemukan")
+    conn.execute(
+        "UPDATE mahasiswa SET persetujuan_pada = datetime('now', 'localtime') "
+        "WHERE nim = ? AND persetujuan_pada IS NULL", (nim,)
+    )
+    conn.commit()
+    return {"nim": nim, "persetujuan": True}
+
+
+@app.delete("/mahasiswa/{nim}/persetujuan", dependencies=[Login])
+def cabut_persetujuan(nim: str, conn=Depends(get_db)):
+    """Pencabutan persetujuan: data wajah dihapus, identitas & riwayat presensi tetap."""
+    if conn.execute("SELECT 1 FROM mahasiswa WHERE nim = ?", (nim,)).fetchone() is None:
+        raise HTTPException(404, "Mahasiswa tidak ditemukan")
+    terhapus = conn.execute("DELETE FROM wajah WHERE nim = ?", (nim,)).rowcount
+    conn.execute("UPDATE mahasiswa SET persetujuan_pada = NULL WHERE nim = ?", (nim,))
+    conn.commit()
+    return {"nim": nim, "persetujuan": False, "wajah_dihapus": terhapus}
 
 
 @app.delete("/mahasiswa/{nim}", dependencies=[Admin])
@@ -310,8 +357,11 @@ async def daftar_wajah(
     conn=Depends(get_db),
     engine: FaceEngine = Depends(get_engine),
 ):
-    if conn.execute("SELECT 1 FROM mahasiswa WHERE nim = ?", (nim,)).fetchone() is None:
+    m = conn.execute("SELECT persetujuan_pada FROM mahasiswa WHERE nim = ?", (nim,)).fetchone()
+    if m is None:
         raise HTTPException(404, "Mahasiswa tidak ditemukan; daftarkan dulu")
+    if m["persetujuan_pada"] is None:
+        raise HTTPException(403, "Mahasiswa belum memberi persetujuan biometrik; catat dulu persetujuannya")
     wajah = engine.analisis(await baca_gambar(berkas))
     if len(wajah) != 1:
         raise HTTPException(
@@ -332,14 +382,185 @@ async def daftar_wajah(
     return {"nim": nim, "jumlah_wajah": jumlah}
 
 
+# ---------- kelas & KRS ----------
+
+NIM_SAH = re.compile(r"^[A-Za-z0-9]{5,20}$")
+KOLOM_NAMA = {"nama", "nama mahasiswa", "nama_mahasiswa", "nama lengkap"}
+KOLOM_PRODI = {"prodi", "program studi", "program_studi"}
+UKURAN_CSV_MAKS = 1_000_000
+
+
+def baca_csv_krs(data: bytes) -> list[dict]:
+    """Baca CSV KRS (koma/titik koma/tab, UTF-8 atau Latin-1, BOM Excel diabaikan)."""
+    try:
+        teks = data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        teks = data.decode("latin-1")
+    baris_pertama = teks.splitlines()[0] if teks.strip() else ""
+    pemisah = max(",;\t", key=baris_pertama.count)
+    pembaca = csv.DictReader(io.StringIO(teks), delimiter=pemisah)
+    if not pembaca.fieldnames:
+        raise HTTPException(422, "Berkas CSV kosong")
+    kolom = {k: (k or "").strip().lower() for k in pembaca.fieldnames}
+    if "nim" not in kolom.values():
+        raise HTTPException(422, "Kolom 'nim' tidak ditemukan pada baris judul CSV")
+    hasil = []
+    for baris in pembaca:
+        b = {kolom[k]: (v or "").strip() for k, v in baris.items() if k is not None}
+        hasil.append({
+            "nim": b.get("nim", ""),
+            "nama": next((b[k] for k in KOLOM_NAMA if b.get(k)), ""),
+            "prodi": next((b[k] for k in KOLOM_PRODI if b.get(k)), ""),
+        })
+    return hasil
+
+
+@app.post("/kelas", status_code=201)
+def buat_kelas(k: KelasBaru, p: Pengguna = Login, conn=Depends(get_db)):
+    dosen_id = p.id
+    if k.dosen_id is not None and k.dosen_id != p.id:
+        if not p.admin:
+            raise HTTPException(403, "Hanya admin yang dapat membuat kelas untuk dosen lain")
+        if conn.execute("SELECT 1 FROM pengguna WHERE id = ? AND aktif = 1",
+                        (k.dosen_id,)).fetchone() is None:
+            raise HTTPException(422, "Dosen pengampu tidak ditemukan")
+        dosen_id = k.dosen_id
+    try:
+        cur = conn.execute(
+            "INSERT INTO kelas (kode_mk, nama_mk, nama_kelas, semester, dosen_id) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (k.kode_mk.strip().upper(), k.nama_mk.strip(), k.nama_kelas.strip().upper(),
+             k.semester.strip(), dosen_id),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        raise HTTPException(409, "Kelas dengan kode MK, nama kelas, dan semester itu sudah ada")
+    return dict(ambil_kelas(conn, cur.lastrowid, p))
+
+
+@app.get("/kelas")
+def daftar_kelas(p: Pengguna = Login, conn=Depends(get_db)):
+    milik, arg = filter_pemilik(p, "k")
+    rows = conn.execute(
+        "SELECT k.*, u.nama AS dosen, "
+        "(SELECT COUNT(*) FROM kelas_peserta x WHERE x.kelas_id = k.id) AS jumlah_peserta, "
+        "(SELECT COUNT(*) FROM sesi s WHERE s.kelas_id = k.id) AS jumlah_sesi "
+        f"FROM kelas k JOIN pengguna u ON u.id = k.dosen_id WHERE {milik} "
+        "ORDER BY k.semester DESC, k.kode_mk, k.nama_kelas",
+        arg,
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.get("/kelas/{kelas_id}/peserta")
+def peserta_kelas(kelas_id: int, p: Pengguna = Login, conn=Depends(get_db)):
+    ambil_kelas(conn, kelas_id, p)
+    rows = conn.execute(
+        "SELECT m.nim, m.nama, m.prodi, m.persetujuan_pada IS NOT NULL AS persetujuan, "
+        "(SELECT COUNT(*) FROM wajah w WHERE w.nim = m.nim) AS jumlah_wajah "
+        "FROM kelas_peserta x JOIN mahasiswa m ON m.nim = x.nim "
+        "WHERE x.kelas_id = ? ORDER BY m.nim",
+        (kelas_id,),
+    ).fetchall()
+    return [{**dict(r), "persetujuan": bool(r["persetujuan"])} for r in rows]
+
+
+@app.post("/kelas/{kelas_id}/peserta/impor")
+async def impor_peserta(kelas_id: int, berkas: UploadFile = File(...),
+                        p: Pengguna = Login, conn=Depends(get_db)):
+    """Impor KRS dari CSV berkolom `nim` (wajib), `nama`, `prodi`.
+
+    Mahasiswa yang belum ada dibuat sebagai identitas saja, TANPA persetujuan
+    biometrik; wajahnya baru dapat didaftarkan setelah persetujuan dicatat.
+    """
+    ambil_kelas(conn, kelas_id, p)
+    data = await berkas.read(UKURAN_CSV_MAKS + 1)
+    if len(data) > UKURAN_CSV_MAKS:
+        raise HTTPException(413, "Berkas CSV terlalu besar (maks. 1 MB)")
+    ditambahkan, sudah_ada, mahasiswa_baru, ditolak = 0, 0, 0, []
+    for i, b in enumerate(baca_csv_krs(data), start=2):  # baris 1 = judul
+        if not any(b.values()):
+            continue
+        if not NIM_SAH.match(b["nim"]):
+            ditolak.append({"baris": i, "nim": b["nim"], "alasan": "NIM tidak valid"})
+            continue
+        if conn.execute("SELECT 1 FROM mahasiswa WHERE nim = ?", (b["nim"],)).fetchone() is None:
+            if not b["nama"]:
+                ditolak.append({"baris": i, "nim": b["nim"],
+                                "alasan": "Mahasiswa baru memerlukan kolom nama"})
+                continue
+            conn.execute("INSERT INTO mahasiswa (nim, nama, prodi) VALUES (?, ?, ?)",
+                         (b["nim"], b["nama"], b["prodi"] or "-"))
+            mahasiswa_baru += 1
+        if conn.execute("INSERT OR IGNORE INTO kelas_peserta (kelas_id, nim) VALUES (?, ?)",
+                        (kelas_id, b["nim"])).rowcount:
+            ditambahkan += 1
+        else:
+            sudah_ada += 1
+    conn.commit()
+    return {"ditambahkan": ditambahkan, "sudah_ada": sudah_ada,
+            "mahasiswa_baru": mahasiswa_baru, "ditolak": ditolak}
+
+
+@app.delete("/kelas/{kelas_id}/peserta/{nim}")
+def keluarkan_peserta(kelas_id: int, nim: str, p: Pengguna = Login, conn=Depends(get_db)):
+    ambil_kelas(conn, kelas_id, p)
+    cur = conn.execute("DELETE FROM kelas_peserta WHERE kelas_id = ? AND nim = ?", (kelas_id, nim))
+    conn.commit()
+    if cur.rowcount == 0:
+        raise HTTPException(404, "Mahasiswa bukan peserta kelas ini")
+    return {"dikeluarkan": nim}
+
+
+@app.get("/kelas/{kelas_id}/rekap")
+def rekap_kelas(kelas_id: int, batas_persen: float = 75.0,
+                p: Pengguna = Login, conn=Depends(get_db)):
+    """Rekap seluruh peserta KRS (termasuk yang tidak pernah hadir)."""
+    k = ambil_kelas(conn, kelas_id, p)
+    total = conn.execute("SELECT COUNT(*) FROM sesi WHERE kelas_id = ?", (kelas_id,)).fetchone()[0]
+    rows = conn.execute(
+        "SELECT m.nim, m.nama, m.prodi, "
+        "(SELECT COUNT(*) FROM presensi x JOIN sesi s ON s.id = x.sesi_id "
+        " WHERE s.kelas_id = ? AND x.nim = m.nim) AS hadir "
+        "FROM kelas_peserta kp JOIN mahasiswa m ON m.nim = kp.nim "
+        "WHERE kp.kelas_id = ? ORDER BY m.nim",
+        (kelas_id, kelas_id),
+    ).fetchall()
+    peserta = []
+    for r in rows:
+        persen = round(100 * r["hadir"] / total, 1) if total else 0.0
+        peserta.append({**dict(r), "persen": persen,
+                        "memenuhi": total > 0 and persen >= batas_persen})
+    luar = conn.execute(
+        "SELECT m.nim, m.nama, COUNT(*) AS hadir FROM presensi x "
+        "JOIN sesi s ON s.id = x.sesi_id JOIN mahasiswa m ON m.nim = x.nim "
+        "WHERE s.kelas_id = ? AND x.nim NOT IN "
+        "(SELECT nim FROM kelas_peserta WHERE kelas_id = ?) GROUP BY m.nim ORDER BY m.nim",
+        (kelas_id, kelas_id),
+    ).fetchall()
+    return {"kelas": dict(k), "jumlah_sesi": total, "batas_persen": batas_persen,
+            "peserta": peserta, "hadir_di_luar_krs": [dict(r) for r in luar]}
+
+
 # ---------- sesi ----------
 
 @app.post("/sesi", status_code=201)
 def buka_sesi(s: SesiBaru, p: Pengguna = Login, conn=Depends(get_db)):
-    """Sesi dimiliki dosen yang membukanya; nama dosen diambil dari akun."""
+    """Sesi dimiliki dosen yang membukanya; nama dosen diambil dari akun.
+
+    Dengan `kelas_id`, kode/nama MK diambil dari kelas (kelas harus milik dosen ini).
+    """
+    if s.kelas_id is not None:
+        k = ambil_kelas(conn, s.kelas_id, p)
+        kode, nama = k["kode_mk"], k["nama_mk"]
+    else:
+        kode, nama = (s.kode_mk or "").strip(), (s.nama_mk or "").strip()
+        if not kode or not nama:
+            raise HTTPException(422, "Isi kode & nama MK, atau pilih kelas")
     cur = conn.execute(
-        "INSERT INTO sesi (kode_mk, nama_mk, ruang, dosen, dosen_id) VALUES (?, ?, ?, ?, ?)",
-        (s.kode_mk, s.nama_mk, s.ruang, p.nama, p.id),
+        "INSERT INTO sesi (kode_mk, nama_mk, ruang, dosen, dosen_id, kelas_id) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (kode, nama, s.ruang, p.nama, p.id, s.kelas_id),
     )
     conn.commit()
     return dict(ambil_sesi(conn, cur.lastrowid, p))
@@ -357,10 +578,12 @@ def daftar_sesi(aktif: bool | None = None, kode_mk: str | None = None,
         syarat.append("s.kode_mk = ?")
         arg.append(kode_mk)
     rows = conn.execute(
-        "SELECT s.*, "
+        "SELECT s.*, k.nama_kelas, "
         "(SELECT COUNT(*) FROM presensi p WHERE p.sesi_id = s.id) AS jumlah_hadir, "
+        "(SELECT COUNT(*) FROM kelas_peserta kp WHERE kp.kelas_id = s.kelas_id) AS jumlah_peserta, "
         "(SELECT COUNT(*) FROM percobaan_palsu f WHERE f.sesi_id = s.id) AS jumlah_palsu "
-        f"FROM sesi s WHERE {' AND '.join(syarat)} ORDER BY s.id DESC LIMIT 200",
+        f"FROM sesi s LEFT JOIN kelas k ON k.id = s.kelas_id "
+        f"WHERE {' AND '.join(syarat)} ORDER BY s.id DESC LIMIT 200",
         arg,
     ).fetchall()
     return [dict(r) for r in rows]
@@ -526,7 +749,20 @@ def _rekap(conn: sqlite3.Connection, sesi_id: int) -> list[dict]:
 
 @app.get("/sesi/{sesi_id}/presensi")
 def rekap_presensi(sesi_id: int, p: Pengguna = Login, conn=Depends(get_db)):
-    return {"sesi": dict(ambil_sesi(conn, sesi_id, p)), "hadir": _rekap(conn, sesi_id)}
+    """Daftar hadir; untuk sesi berkelas juga peserta KRS yang belum hadir."""
+    sesi = ambil_sesi(conn, sesi_id, p)
+    hasil = {"sesi": dict(sesi), "hadir": _rekap(conn, sesi_id), "belum_hadir": None}
+    if sesi["kelas_id"] is not None:
+        rows = conn.execute(
+            "SELECT m.nim, m.nama, m.prodi, "
+            "(SELECT COUNT(*) FROM wajah w WHERE w.nim = m.nim) AS jumlah_wajah "
+            "FROM kelas_peserta kp JOIN mahasiswa m ON m.nim = kp.nim "
+            "WHERE kp.kelas_id = ? AND kp.nim NOT IN "
+            "(SELECT nim FROM presensi WHERE sesi_id = ?) ORDER BY m.nim",
+            (sesi["kelas_id"], sesi_id),
+        ).fetchall()
+        hasil["belum_hadir"] = [dict(r) for r in rows]
+    return hasil
 
 
 @app.get("/sesi/{sesi_id}/presensi.csv")

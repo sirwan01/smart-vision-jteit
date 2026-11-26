@@ -75,12 +75,30 @@ Buka `http://SERVER:8000/dasbor` (atau `/`) dan masuk dengan akun dosen/admin.
 |---|---|
 | **Sesi** | Ringkasan hari ini, buka/tutup sesi, daftar hadir langsung (segar tiap 5 detik), percobaan palsu, unduh CSV |
 | **Kamera kelas dari peramban** | Laptop dosen menjadi kamera presensi: bingkai webcam dikirim tiap 3 detik |
-| **Mahasiswa** | Daftarkan mahasiswa (wajib centang persetujuan), ambil foto wajah lewat webcam atau unggah berkas, cari, hapus data |
-| **Rekap** | Persentase kehadiran per mata kuliah dengan batas minimal yang dapat diatur (bawaan 75%) |
+| **Kelas** | Buat kelas (MK + kelas + semester), impor peserta dari CSV KRS, catat persetujuan, keluarkan peserta |
+| **Mahasiswa** | Daftarkan mahasiswa, catat/cabut persetujuan, ambil foto wajah lewat webcam atau unggah berkas, cari, hapus data (admin) |
+| **Rekap** | Per kelas: seluruh peserta KRS termasuk yang belum pernah hadir, plus yang hadir di luar KRS; per MK untuk sesi tanpa kelas. Batas minimal dapat diatur (bawaan 75%) |
 | **Pengguna** (admin) | Buat akun dosen, nonaktifkan/aktifkan, reset kata sandi |
 | **Ganti sandi** | Setiap pengguna dapat mengganti kata sandinya sendiri |
 
 Webcam di peramban hanya berfungsi melalui **HTTPS** atau `localhost`.
+
+## Kelas dan impor KRS
+
+1. Menu **Kelas** → buat kelas, misalnya `TIK301` kelas `A`, semester `2026/2027 Ganjil`
+   (admin dapat menetapkan dosen pengampu lain).
+2. **Impor CSV KRS** dengan kolom `nim` (wajib), `nama`, `prodi`. Pemisah koma atau titik
+   koma (format Excel Indonesia), UTF-8 atau Latin-1; tombol *Unduh templat CSV* tersedia.
+   Baris yang ditolak (NIM tidak valid, mahasiswa baru tanpa nama) dilaporkan per nomor baris;
+   impor ulang aman (tidak menggandakan peserta).
+3. Saat membuka sesi, pilih kelasnya. Detail sesi menampilkan daftar **Belum hadir**
+   secara langsung, termasuk peserta yang belum punya data wajah.
+4. Menu **Rekap** → pilih kelas untuk melihat persentase seluruh peserta KRS.
+
+**Persetujuan biometrik.** Mahasiswa yang masuk lewat impor KRS hanya tercatat
+identitasnya. Foto wajah baru dapat diambil setelah dosen menekan **Catat persetujuan**
+(setelah mahasiswa menyetujui). **Cabut persetujuan** menghapus seluruh data wajahnya,
+sedangkan identitas dan riwayat presensi tetap.
 
 ## Alur penggunaan (API)
 
@@ -148,7 +166,9 @@ Uji integrasi model asli berjalan bila model sudah diunduh dan folder
 Wajah adalah **data pribadi yang bersifat spesifik** menurut UU No. 27 Tahun 2022
 tentang Pelindungan Data Pribadi. Karena itu:
 
-- Pendaftaran wajah **wajib** disertai persetujuan eksplisit mahasiswa (dicatat waktunya).
+- Pendaftaran wajah **wajib** disertai persetujuan eksplisit mahasiswa (dicatat waktunya);
+  data KRS tanpa persetujuan tidak dapat dipakai untuk mendaftarkan wajah.
+- Persetujuan dapat dicabut kapan saja; data wajah langsung dihapus.
 - Yang disimpan hanya **embedding** numerik, bukan foto wajah.
 - `DELETE /mahasiswa/{nim}` menghapus identitas, embedding, dan riwayat presensi.
 - Folder `data/`, berkas `*.db`, dan model **tidak** masuk repositori (`.gitignore`).
@@ -165,6 +185,7 @@ tentang Pelindungan Data Pribadi. Karena itu:
 - [x] Deteksi wajah hidup pasif (*anti-spoofing*) untuk menolak foto/layar ponsel
 - [ ] Deteksi hidup aktif (kedip/gerak kepala) sebagai lapisan kedua
 - [x] Dasbor web dosen (sesi, kamera peramban, pendaftaran wajah, audit, rekap per MK)
-- [ ] Integrasi SIAKAD UNM dan ekspor ke format rekap jurusan
+- [x] Impor peserta kelas (KRS) dari CSV
+- [ ] Integrasi langsung SIAKAD UNM dan ekspor ke format rekap jurusan
 - [x] Autentikasi per pengguna (dosen, admin jurusan)
 - [ ] Evaluasi akurasi pada data mahasiswa JTEIT (TAR/FAR, variasi pencahayaan kelas)

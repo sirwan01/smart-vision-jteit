@@ -67,6 +67,7 @@ tr.pilih:hover, tr.aktif { background: var(--bg); }
 .l-waspada { background: var(--waspada-bg); color: var(--waspada); }
 .l-info { background: var(--bg); color: var(--aksen); border: 1px solid var(--garis); }
 .akun { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+.utama-label { background: var(--aksen); color: var(--aksen-teks) !important; border-color: var(--aksen); }
 .sel-aksi { white-space: normal; min-width: 130px; }
 .tombol-baris { display: flex; flex-wrap: wrap; gap: 6px; }
 .tombol-baris button { padding: 5px 10px; font-size: 13px; }
@@ -92,6 +93,7 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
     </div>
     <nav role="tablist">
       <button role="tab" data-tab="sesi" aria-selected="true">Sesi</button>
+      <button role="tab" data-tab="kelas" aria-selected="false">Kelas</button>
       <button role="tab" data-tab="mahasiswa" aria-selected="false">Mahasiswa</button>
       <button role="tab" data-tab="rekap" aria-selected="false">Rekap</button>
       <button role="tab" data-tab="pengguna" aria-selected="false" id="tab-btn-pengguna" hidden>Pengguna</button>
@@ -120,11 +122,13 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
         <div class="kartu">
           <h2>Buka sesi perkuliahan</h2>
           <form id="f-sesi">
-            <div class="baris">
+            <label>Kelas<select name="kelas_id" id="s-kelas">
+              <option value="">Tanpa kelas (isi MK manual)</option></select></label>
+            <div id="s-manual" class="baris">
               <label>Kode MK<input name="kode_mk" required placeholder="TIK301"></label>
-              <label>Ruang<input name="ruang" required placeholder="GD-301"></label>
+              <label>Nama mata kuliah<input name="nama_mk" required placeholder="Visi Komputer"></label>
             </div>
-            <label>Nama mata kuliah<input name="nama_mk" required placeholder="Visi Komputer"></label>
+            <label>Ruang<input name="ruang" required placeholder="GD-301"></label>
             <p class="redup" style="font-size:13px;margin:0 0 8px">Sesi dicatat atas nama akun Anda.</p>
             <button class="utama" type="submit">Buka sesi</button>
           </form>
@@ -159,12 +163,71 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
             <tbody id="t-hadir"></tbody>
           </table></div>
           <div id="hadir-kosong" class="kosong" hidden>Belum ada yang tercatat hadir.</div>
+          <div id="blm-blok" hidden>
+            <h2 style="margin-top:16px">Belum hadir (<span id="d-jml-blm">0</span>)</h2>
+            <div class="gulir"><table>
+              <thead><tr><th>NIM</th><th>Nama</th><th>Data wajah</th></tr></thead>
+              <tbody id="t-blm"></tbody>
+            </table></div>
+            <div id="blm-kosong" class="kosong" hidden>Semua peserta KRS sudah hadir.</div>
+          </div>
           <h2 style="margin-top:16px">Percobaan palsu (<span id="d-jml-palsu">0</span>)</h2>
           <div class="gulir"><table>
             <thead><tr><th>Waktu</th><th>NIM diduga</th><th>Nama</th><th class="angka">Skor hidup</th></tr></thead>
             <tbody id="t-palsu"></tbody>
           </table></div>
           <div id="palsu-kosong" class="kosong" hidden>Tidak ada percobaan foto/layar.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= KELAS ================= -->
+  <section id="tab-kelas" hidden>
+    <div class="dua">
+      <div>
+        <div class="kartu">
+          <h2>Buat kelas</h2>
+          <form id="f-kelas">
+            <div class="baris">
+              <label>Kode MK<input name="kode_mk" required maxlength="20" placeholder="TIK301"></label>
+              <label>Kelas<input name="nama_kelas" required maxlength="20" placeholder="A"></label>
+            </div>
+            <label>Nama mata kuliah<input name="nama_mk" required placeholder="Visi Komputer"></label>
+            <label>Semester<input name="semester" required maxlength="30" id="k-semester"></label>
+            <label id="k-dosen-blok" hidden>Dosen pengampu<select name="dosen_id" id="k-dosen"></select></label>
+            <button class="utama" type="submit">Buat kelas</button>
+          </form>
+        </div>
+        <div class="kartu">
+          <h2>Daftar kelas</h2>
+          <div class="gulir"><table>
+            <thead><tr><th>Kelas</th><th>Semester</th><th class="angka">Peserta</th><th class="angka">Sesi</th></tr></thead>
+            <tbody id="t-kelas"></tbody>
+          </table></div>
+          <div id="kelas-kosong" class="kosong" hidden>Belum ada kelas.</div>
+        </div>
+      </div>
+      <div class="kartu">
+        <div id="kd-kosong" class="kosong">Pilih kelas untuk mengelola peserta (KRS).</div>
+        <div id="kd-isi" hidden>
+          <h2 id="kd-judul"></h2>
+          <div class="redup" id="kd-info"></div>
+          <div class="aksi">
+            <label class="tombol utama-label" style="margin:0">Impor CSV KRS
+              <input id="kd-berkas" type="file" accept=".csv,text/csv" hidden></label>
+            <button id="kd-templat">Unduh templat CSV</button>
+          </div>
+          <p class="redup" style="font-size:13px;margin-top:0">Kolom: <code>nim</code> (wajib), <code>nama</code>,
+            <code>prodi</code>. Pemisah koma atau titik koma. Mahasiswa baru masuk <b>tanpa</b> persetujuan
+            biometrik; catat persetujuan sebelum mengambil foto wajah.</p>
+          <div id="kd-hasil" class="redup" hidden></div>
+          <h2>Peserta (<span id="kd-jml">0</span>)</h2>
+          <div class="gulir"><table>
+            <thead><tr><th>NIM</th><th>Nama</th><th>Persetujuan</th><th class="angka">Wajah</th><th></th></tr></thead>
+            <tbody id="t-peserta"></tbody>
+          </table></div>
+          <div id="peserta-kosong" class="kosong" hidden>Belum ada peserta. Impor CSV KRS.</div>
         </div>
       </div>
     </div>
@@ -196,7 +259,7 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
         <h2>Mahasiswa terdaftar (<span id="m-jml">0</span>)</h2>
         <input id="cari" type="search" placeholder="Cari NIM atau nama" style="margin-bottom:8px">
         <div class="gulir"><table>
-          <thead><tr><th>NIM</th><th>Nama</th><th>Prodi</th><th class="angka">Foto wajah</th><th></th></tr></thead>
+          <thead><tr><th>NIM</th><th>Nama</th><th>Prodi</th><th>Persetujuan</th><th class="angka">Foto wajah</th><th></th></tr></thead>
           <tbody id="t-mhs"></tbody>
         </table></div>
         <div id="mhs-kosong" class="kosong" hidden>Belum ada mahasiswa.</div>
@@ -207,9 +270,9 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
   <!-- ================= REKAP ================= -->
   <section id="tab-rekap" hidden>
     <div class="kartu">
-      <h2>Rekap kehadiran per mata kuliah</h2>
+      <h2>Rekap kehadiran</h2>
       <div class="baris" style="align-items:end">
-        <label>Mata kuliah<select id="r-mk"></select></label>
+        <label>Kelas / mata kuliah<select id="r-mk"></select></label>
         <label>Batas minimal hadir (%)<input id="r-batas" type="number" min="0" max="100" value="75"></label>
       </div>
       <p class="redup" id="r-info"></p>
@@ -218,8 +281,12 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
         <tbody id="t-rekap"></tbody>
       </table></div>
       <div id="rekap-kosong" class="kosong" hidden>Belum ada data.</div>
-      <p class="redup" style="font-size:13px">Peserta adalah mahasiswa yang pernah tercatat hadir;
-        daftar KRS belum terhubung dengan SIAKAD.</p>
+      <div id="r-luar" hidden>
+        <h2 style="margin-top:16px">Hadir tetapi tidak ada di KRS</h2>
+        <div class="gulir"><table><thead><tr><th>NIM</th><th>Nama</th><th class="angka">Hadir</th></tr></thead>
+          <tbody id="t-luar"></tbody></table></div>
+      </div>
+      <p class="redup" style="font-size:13px" id="r-catatan"></p>
     </div>
   </section>
   <!-- ================= PENGGUNA (admin) ================= -->
@@ -344,13 +411,14 @@ $("#f-masuk").addEventListener("submit", async (e) => {
   } catch (err) { $("#masuk-galat").textContent = err.message; f.sandi.value = ""; }
 });
 function setelahMasuk(p) {
+  $("#k-dosen").innerHTML = "";
   saya = p;
   $("#akun").hidden = false;
   $("#akun-nama").textContent = p.nama;
   $("#akun-peran").textContent = p.peran === "admin" ? "Admin" : "Dosen";
   $("#tab-btn-pengguna").hidden = p.peran !== "admin";
   if (p.peran !== "admin" && tabAktif === "pengguna") pindahTab("sesi");
-  muatSemua();
+  muatSemua(); muatPilihanKelas().catch(() => {});
 }
 $("#b-keluar").addEventListener("click", async () => {
   try { await api("/auth/keluar", { method: "POST" }); } catch (_) {}
@@ -375,8 +443,9 @@ function pindahTab(nama) {
   tabAktif = nama;
   document.querySelectorAll("nav [data-tab]").forEach((x) =>
     x.setAttribute("aria-selected", String(x.dataset.tab === nama)));
-  ["sesi", "mahasiswa", "rekap", "pengguna"].forEach((t) => ($("#tab-" + t).hidden = t !== nama));
-  const muat = { mahasiswa: muatMahasiswa, rekap: muatDaftarMK, pengguna: muatPengguna }[nama];
+  ["sesi", "kelas", "mahasiswa", "rekap", "pengguna"].forEach((t) => ($("#tab-" + t).hidden = t !== nama));
+  const muat = { sesi: muatPilihanKelas, kelas: muatKelas, mahasiswa: muatMahasiswa,
+                 rekap: muatDaftarMK, pengguna: muatPengguna }[nama];
   if (muat) muat().catch((err) => pesan(err.message, true));
 }
 document.querySelectorAll("nav [data-tab]").forEach((b) =>
@@ -399,9 +468,9 @@ async function muatSesi() {
   $("#sesi-kosong").hidden = daftar.length > 0;
   $("#t-sesi").innerHTML = daftar.map((s) => `
     <tr class="pilih ${s.id === sesiDipilih ? "aktif" : ""}" data-id="${s.id}">
-      <td><b>${esc(s.kode_mk)}</b><br><span class="redup">${esc(s.ruang)}${saya?.peran === "admin" ? " · " + esc(s.dosen) : ""}</span></td>
+      <td><b>${esc(s.kode_mk)}${s.nama_kelas ? "-" + esc(s.nama_kelas) : ""}</b><br><span class="redup">${esc(s.ruang)}${saya?.peran === "admin" ? " · " + esc(s.dosen) : ""}</span></td>
       <td>${esc(s.dibuka.slice(0, 16))}</td>
-      <td class="angka">${s.jumlah_hadir}${s.jumlah_palsu ? ` <span class="lencana l-bahaya" title="Percobaan palsu">${s.jumlah_palsu}</span>` : ""}</td>
+      <td class="angka">${s.jumlah_hadir}${s.kelas_id ? "/" + s.jumlah_peserta : ""}${s.jumlah_palsu ? ` <span class="lencana l-bahaya" title="Percobaan palsu">${s.jumlah_palsu}</span>` : ""}</td>
       <td>${s.ditutup ? '<span class="lencana l-waspada">Ditutup</span>' : '<span class="lencana l-ok">Aktif</span>'}</td>
     </tr>`).join("");
   document.querySelectorAll("#t-sesi tr").forEach((tr) =>
@@ -424,7 +493,7 @@ async function muatDetail() {
   ]);
   const s = r.sesi;
   $("#detail-kosong").hidden = true; $("#detail-isi").hidden = false;
-  $("#d-judul").textContent = `${s.kode_mk} · ${s.nama_mk}`;
+  $("#d-judul").textContent = `${s.kode_mk}${s.nama_kelas ? "-" + s.nama_kelas : ""} · ${s.nama_mk}`;
   $("#d-info").textContent = `${s.ruang} · ${s.dosen} · dibuka ${s.dibuka}` +
     (s.ditutup ? ` · ditutup ${s.ditutup}` : "");
   $("#b-tutup").hidden = !!s.ditutup;
@@ -437,17 +506,42 @@ async function muatDetail() {
     <td class="angka">${angka(h.skor)}</td><td class="angka">${angka(h.skor_hidup)}</td></tr>`).join("");
   $("#d-jml-palsu").textContent = palsu.length;
   $("#palsu-kosong").hidden = palsu.length > 0;
+  $("#blm-blok").hidden = r.belum_hadir == null;
+  if (r.belum_hadir) {
+    $("#d-jml-blm").textContent = r.belum_hadir.length;
+    $("#blm-kosong").hidden = r.belum_hadir.length > 0;
+    $("#t-blm").innerHTML = r.belum_hadir.map((b) => `<tr><td>${esc(b.nim)}</td><td>${esc(b.nama)}</td>
+      <td>${b.jumlah_wajah ? b.jumlah_wajah + " foto" : '<span class="lencana l-waspada">Belum ada</span>'}</td></tr>`).join("");
+  }
   $("#t-palsu").innerHTML = palsu.map((p) => `<tr>
     <td>${jam(p.waktu)}</td><td>${p.nim_dugaan ? esc(p.nim_dugaan) : '<span class="redup">tidak dikenal</span>'}</td>
     <td>${esc(p.nama || "")}</td><td class="angka">${angka(p.skor_hidup)}</td></tr>`).join("");
 }
 
+async function muatPilihanKelas() {
+  const daftar = await api("/kelas");
+  const pilih = $("#s-kelas"), lama = pilih.value;
+  pilih.innerHTML = '<option value="">Tanpa kelas (isi MK manual)</option>' + daftar.map((k) =>
+    `<option value="${k.id}">${esc(k.kode_mk)}-${esc(k.nama_kelas)} · ${esc(k.nama_mk)} (${esc(k.semester)})</option>`).join("");
+  if (daftar.some((k) => String(k.id) === lama)) pilih.value = lama;
+  aturFormSesi();
+}
+function aturFormSesi() {
+  const manual = !$("#s-kelas").value;
+  $("#s-manual").hidden = !manual;
+  document.querySelectorAll("#s-manual input").forEach((i) => (i.required = manual));
+}
+$("#s-kelas").addEventListener("change", aturFormSesi);
+
 $("#f-sesi").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const data = Object.fromEntries(new FormData(e.target));
+  const f = e.target;
+  const data = { ruang: f.ruang.value.trim() };
+  if (f.kelas_id.value) data.kelas_id = Number(f.kelas_id.value);
+  else { data.kode_mk = f.kode_mk.value.trim(); data.nama_mk = f.nama_mk.value.trim(); }
   try {
     const s = await api("/sesi", { method: "POST", json: data });
-    pesan(`Sesi ${s.kode_mk} dibuka`);
+    pesan(`Sesi ${s.kode_mk}${s.nama_kelas ? "-" + s.nama_kelas : ""} dibuka`);
     await Promise.all([muatSesi(), muatRingkasan()]);
     await pilihSesi(s.id);
   } catch (err) { pesan(err.message, true); }
@@ -508,7 +602,7 @@ $("#b-kamera").addEventListener("click", async () => {
         $("#kamera-status").textContent =
           `${new Date().toLocaleTimeString("id-ID")} · ${r.jumlah_wajah} wajah, ` +
           `${r.dikenali.length} dikenali, ${r.ditolak_palsu.length} palsu`;
-        if (baru || r.ditolak_palsu.length) { muatDetail(); muatRingkasan(); }
+        if (baru || r.ditolak_palsu.length) { muatDetail(); muatRingkasan(); muatSesi(); }
       } catch (err) { $("#kamera-status").textContent = "Galat: " + err.message; }
     }, 3000);
   } catch (err) { hentikanKamera(); pesan(err.message, true); }
@@ -527,14 +621,122 @@ function tampilkanMahasiswa() {
   $("#mhs-kosong").hidden = d.length > 0;
   $("#t-mhs").innerHTML = d.map((m) => `<tr>
     <td>${esc(m.nim)}</td><td>${esc(m.nama)}</td><td class="redup">${esc(m.prodi)}</td>
+    <td>${lencanaSetuju(m.persetujuan)}</td>
     <td class="angka">${m.jumlah_wajah ? m.jumlah_wajah : '<span class="lencana l-waspada">0</span>'}</td>
-    <td><button data-wajah="${esc(m.nim)}">Foto wajah</button>
-        ${saya?.peran === "admin" ? `<button class="bahaya" data-hapus="${esc(m.nim)}">Hapus</button>` : ""}</td></tr>`).join("");
-  document.querySelectorAll("[data-wajah]").forEach((b) =>
-    b.addEventListener("click", () => bukaWajah(b.dataset.wajah)));
+    <td class="sel-aksi"><div class="tombol-baris">${aksiMahasiswa(m)}
+        ${saya?.peran === "admin" ? `<button class="bahaya" data-hapus="${esc(m.nim)}">Hapus</button>` : ""}</div></td></tr>`).join("");
+  pasangAksiMahasiswa($("#t-mhs"), muatMahasiswa);
   document.querySelectorAll("[data-hapus]").forEach((b) =>
     b.addEventListener("click", () => hapusMahasiswa(b.dataset.hapus)));
 }
+
+// ---------- persetujuan biometrik ----------
+function lencanaSetuju(ok) {
+  return ok ? '<span class="lencana l-ok">Setuju</span>' : '<span class="lencana l-waspada">Belum</span>';
+}
+function aksiMahasiswa(m) {
+  return m.persetujuan
+    ? `<button data-wajah="${esc(m.nim)}">Foto wajah</button><button data-cabut="${esc(m.nim)}">Cabut persetujuan</button>`
+    : `<button data-setuju="${esc(m.nim)}" data-nama="${esc(m.nama)}">Catat persetujuan</button>`;
+}
+function pasangAksiMahasiswa(wadah, muatUlang) {
+  wadah.querySelectorAll("[data-wajah]").forEach((b) =>
+    b.addEventListener("click", () => bukaWajah(b.dataset.wajah, muatUlang)));
+  wadah.querySelectorAll("[data-setuju]").forEach((b) => b.addEventListener("click", async () => {
+    if (!confirm(`Pastikan ${b.dataset.nama} (${b.dataset.setuju}) telah menyetujui pemrosesan data wajahnya ` +
+                 "untuk presensi (UU No. 27/2022). Catat persetujuan sekarang?")) return;
+    try {
+      await api(`/mahasiswa/${encodeURIComponent(b.dataset.setuju)}/persetujuan`, { method: "POST" });
+      pesan("Persetujuan dicatat"); await muatUlang(); bukaWajah(b.dataset.setuju, muatUlang);
+    } catch (err) { pesan(err.message, true); }
+  }));
+  wadah.querySelectorAll("[data-cabut]").forEach((b) => b.addEventListener("click", async () => {
+    if (!confirm(`Cabut persetujuan ${b.dataset.cabut}? Semua data wajahnya dihapus; riwayat presensi tetap.`)) return;
+    try {
+      const r = await api(`/mahasiswa/${encodeURIComponent(b.dataset.cabut)}/persetujuan`, { method: "DELETE" });
+      pesan(`Persetujuan dicabut; ${r.wajah_dihapus} data wajah dihapus`); await muatUlang(); muatRingkasan();
+    } catch (err) { pesan(err.message, true); }
+  }));
+}
+
+// ---------- kelas & KRS ----------
+let kelasDipilih = null;
+function semesterKini() {
+  const d = new Date(), y = d.getFullYear(), m = d.getMonth() + 1;
+  return m >= 8 ? `${y}/${y + 1} Ganjil` : m <= 1 ? `${y - 1}/${y} Ganjil` : `${y - 1}/${y} Genap`;
+}
+$("#k-semester").value = semesterKini();
+async function muatKelas() {
+  const daftar = await api("/kelas");
+  $("#kelas-kosong").hidden = daftar.length > 0;
+  $("#t-kelas").innerHTML = daftar.map((k) => `
+    <tr class="pilih ${k.id === kelasDipilih ? "aktif" : ""}" data-id="${k.id}">
+      <td><b>${esc(k.kode_mk)}-${esc(k.nama_kelas)}</b><br><span class="redup">${esc(k.nama_mk)}${saya?.peran === "admin" ? " · " + esc(k.dosen) : ""}</span></td>
+      <td>${esc(k.semester)}</td><td class="angka">${k.jumlah_peserta}</td><td class="angka">${k.jumlah_sesi}</td></tr>`).join("");
+  document.querySelectorAll("#t-kelas tr").forEach((tr) =>
+    tr.addEventListener("click", () => { kelasDipilih = Number(tr.dataset.id); muatKelas(); }));
+  const blok = $("#k-dosen-blok");
+  blok.hidden = saya?.peran !== "admin";
+  if (!blok.hidden && !$("#k-dosen").options.length) {
+    const u = (await api("/pengguna")).filter((x) => x.aktif);
+    $("#k-dosen").innerHTML = u.map((x) =>
+      `<option value="${x.id}" ${x.id === saya.id ? "selected" : ""}>${esc(x.nama)}</option>`).join("");
+  }
+  const k = daftar.find((x) => x.id === kelasDipilih);
+  $("#kd-kosong").hidden = !!k; $("#kd-isi").hidden = !k;
+  if (k) {
+    $("#kd-judul").textContent = `${k.kode_mk}-${k.nama_kelas} · ${k.nama_mk}`;
+    $("#kd-info").textContent = `${k.semester} · ${k.dosen} · ${k.jumlah_sesi} sesi`;
+    await muatPeserta();
+  }
+}
+async function muatPeserta() {
+  const d = await api(`/kelas/${kelasDipilih}/peserta`);
+  $("#kd-jml").textContent = d.length;
+  $("#peserta-kosong").hidden = d.length > 0;
+  $("#t-peserta").innerHTML = d.map((m) => `<tr>
+    <td>${esc(m.nim)}</td><td>${esc(m.nama)}</td><td>${lencanaSetuju(m.persetujuan)}</td>
+    <td class="angka">${m.jumlah_wajah ? m.jumlah_wajah : '<span class="lencana l-waspada">0</span>'}</td>
+    <td class="sel-aksi"><div class="tombol-baris">${aksiMahasiswa(m)}
+      <button class="bahaya" data-keluar="${esc(m.nim)}">Keluarkan</button></div></td></tr>`).join("");
+  pasangAksiMahasiswa($("#t-peserta"), muatKelas);
+  document.querySelectorAll("[data-keluar]").forEach((b) => b.addEventListener("click", async () => {
+    if (!confirm(`Keluarkan ${b.dataset.keluar} dari kelas ini? Data mahasiswanya tidak dihapus.`)) return;
+    try { await api(`/kelas/${kelasDipilih}/peserta/${encodeURIComponent(b.dataset.keluar)}`, { method: "DELETE" }); muatKelas(); }
+    catch (err) { pesan(err.message, true); }
+  }));
+}
+$("#f-kelas").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const data = Object.fromEntries(new FormData(e.target));
+  if (data.dosen_id) data.dosen_id = Number(data.dosen_id); else delete data.dosen_id;
+  try {
+    const k = await api("/kelas", { method: "POST", json: data });
+    pesan(`Kelas ${k.kode_mk}-${k.nama_kelas} dibuat. Impor KRS-nya.`);
+    e.target.reset(); $("#k-semester").value = semesterKini();
+    kelasDipilih = k.id; muatKelas();
+  } catch (err) { pesan(err.message, true); }
+});
+$("#kd-berkas").addEventListener("change", async (e) => {
+  const berkas = e.target.files[0]; e.target.value = "";
+  if (!berkas) return;
+  const fd = new FormData(); fd.append("berkas", berkas, berkas.name);
+  try {
+    const r = await api(`/kelas/${kelasDipilih}/peserta/impor`, { method: "POST", body: fd });
+    const el = $("#kd-hasil"); el.hidden = false;
+    el.innerHTML = `<p><b>${r.ditambahkan}</b> peserta ditambahkan (${r.mahasiswa_baru} mahasiswa baru), ` +
+      `${r.sudah_ada} sudah terdaftar, <b>${r.ditolak.length}</b> baris ditolak.</p>` +
+      (r.ditolak.length ? "<ul>" + r.ditolak.map((x) =>
+        `<li>Baris ${x.baris}${x.nim ? " (" + esc(x.nim) + ")" : ""}: ${esc(x.alasan)}</li>`).join("") + "</ul>" : "");
+    muatKelas();
+  } catch (err) { pesan(err.message, true); }
+});
+$("#kd-templat").addEventListener("click", () => {
+  const isi = "\ufeffnim;nama;prodi\n230210501001;Nama Mahasiswa;Pendidikan Teknik Informatika dan Komputer\n";
+  const url = URL.createObjectURL(new Blob([isi], { type: "text/csv" }));
+  Object.assign(document.createElement("a"), { href: url, download: "templat_krs.csv" }).click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
 $("#cari").addEventListener("input", tampilkanMahasiswa);
 
 $("#f-mhs").addEventListener("submit", async (e) => {
@@ -559,9 +761,9 @@ async function hapusMahasiswa(nim) {
 }
 
 // ---------- dialog foto wajah ----------
-let nimWajah = null, aliranWajah = null;
-function bukaWajah(nim) {
-  nimWajah = nim;
+let nimWajah = null, aliranWajah = null, setelahWajah = null;
+function bukaWajah(nim, muatUlang = null) {
+  nimWajah = nim; setelahWajah = muatUlang;
   $("#w-nim").textContent = nim; $("#w-status").textContent = "";
   $("#d-wajah").showModal();
 }
@@ -586,22 +788,31 @@ $("#w-kamera").addEventListener("click", async () => {
 $("#w-ambil").addEventListener("click", async () => kirimWajah(await jpegDari($("#v-wajah"))));
 $("#w-berkas").addEventListener("change", (e) => { if (e.target.files[0]) kirimWajah(e.target.files[0]); e.target.value = ""; });
 $("#w-tutup").addEventListener("click", () => $("#d-wajah").close());
-$("#d-wajah").addEventListener("close", () => { tutupKameraWajah(); if (tabAktif === "mahasiswa") muatMahasiswa(); });
+$("#d-wajah").addEventListener("close", () => {
+  tutupKameraWajah();
+  (setelahWajah || (tabAktif === "mahasiswa" ? muatMahasiswa : null))?.();
+});
 
 // ---------- rekap ----------
 async function muatDaftarMK() {
-  const mk = await api("/rekap");
+  const [kelas, mk] = await Promise.all([api("/kelas"), api("/rekap")]);
   const pilih = $("#r-mk"), lama = pilih.value;
-  pilih.innerHTML = mk.map((m) =>
-    `<option value="${esc(m.kode_mk)}">${esc(m.kode_mk)} · ${esc(m.nama_mk)} (${m.jumlah_sesi} sesi)</option>`).join("");
-  if (mk.some((m) => m.kode_mk === lama)) pilih.value = lama;
-  if (mk.length) muatRekap(); else { $("#t-rekap").innerHTML = ""; $("#rekap-kosong").hidden = false; $("#r-info").textContent = ""; }
+  pilih.innerHTML =
+    (kelas.length ? '<optgroup label="Per kelas (KRS)">' + kelas.map((k) =>
+      `<option value="k:${k.id}">${esc(k.kode_mk)}-${esc(k.nama_kelas)} · ${esc(k.nama_mk)} · ${esc(k.semester)}</option>`).join("") + "</optgroup>" : "") +
+    (mk.length ? '<optgroup label="Per mata kuliah (semua sesi)">' + mk.map((m) =>
+      `<option value="m:${esc(m.kode_mk)}">${esc(m.kode_mk)} · ${esc(m.nama_mk)} (${m.jumlah_sesi} sesi)</option>`).join("") + "</optgroup>" : "");
+  if ([...pilih.options].some((o) => o.value === lama)) pilih.value = lama;
+  if (pilih.options.length) muatRekap();
+  else { $("#t-rekap").innerHTML = ""; $("#rekap-kosong").hidden = false; $("#r-info").textContent = ""; $("#r-luar").hidden = true; }
 }
 async function muatRekap() {
-  const kode = $("#r-mk").value; if (!kode) return;
+  const nilai = $("#r-mk").value; if (!nilai) return;
   const batas = Number($("#r-batas").value) || 0;
+  const kelas = nilai.startsWith("k:"), id = nilai.slice(2);
   try {
-    const r = await api(`/rekap/${encodeURIComponent(kode)}?batas_persen=${batas}`);
+    const r = await api(kelas ? `/kelas/${id}/rekap?batas_persen=${batas}`
+                              : `/rekap/${encodeURIComponent(id)}?batas_persen=${batas}`);
     const kurang = r.peserta.filter((p) => !p.memenuhi).length;
     $("#r-info").textContent = `${r.jumlah_sesi} sesi · ${r.peserta.length} mahasiswa · ${kurang} di bawah ${batas}%`;
     $("#rekap-kosong").hidden = r.peserta.length > 0;
@@ -609,6 +820,12 @@ async function muatRekap() {
       <td>${esc(p.nim)}</td><td>${esc(p.nama)}</td><td class="redup">${esc(p.prodi)}</td>
       <td class="angka">${p.hadir}/${r.jumlah_sesi}</td><td class="angka">${p.persen.toFixed(1)}</td>
       <td>${p.memenuhi ? '<span class="lencana l-ok">Memenuhi</span>' : '<span class="lencana l-bahaya">Kurang</span>'}</td></tr>`).join("");
+    const luar = kelas ? r.hadir_di_luar_krs : [];
+    $("#r-luar").hidden = !luar.length;
+    $("#t-luar").innerHTML = luar.map((x) => `<tr><td>${esc(x.nim)}</td><td>${esc(x.nama)}</td><td class="angka">${x.hadir}</td></tr>`).join("");
+    $("#r-catatan").textContent = kelas
+      ? "Seluruh peserta KRS ditampilkan, termasuk yang belum pernah hadir."
+      : "Mode per mata kuliah: peserta adalah mahasiswa yang pernah hadir (tanpa KRS).";
   } catch (err) { pesan(err.message, true); }
 }
 $("#r-mk").addEventListener("change", muatRekap);

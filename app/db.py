@@ -1,4 +1,4 @@
-"""Penyimpanan SQLite untuk mahasiswa, embedding wajah, sesi, dan presensi."""
+"""Penyimpanan SQLite: mahasiswa, wajah, pengguna, kelas/KRS, sesi, dan presensi."""
 
 import sqlite3
 from pathlib import Path
@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS mahasiswa (
     nim         TEXT PRIMARY KEY,
     nama        TEXT NOT NULL,
     prodi       TEXT NOT NULL,
-    persetujuan_pada TEXT NOT NULL,
+    -- NULL = identitas saja (mis. dari impor KRS); wajah belum boleh didaftarkan.
+    persetujuan_pada TEXT,
     dibuat      TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 CREATE TABLE IF NOT EXISTS wajah (
@@ -34,6 +35,22 @@ CREATE TABLE IF NOT EXISTS token_sesi (
     pengguna_id INTEGER NOT NULL REFERENCES pengguna(id) ON DELETE CASCADE,
     kedaluwarsa REAL NOT NULL
 );
+-- Kelas perkuliahan (MK + kelas + semester) yang diampu satu dosen; pesertanya dari KRS.
+CREATE TABLE IF NOT EXISTS kelas (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    kode_mk     TEXT NOT NULL,
+    nama_mk     TEXT NOT NULL,
+    nama_kelas  TEXT NOT NULL,
+    semester    TEXT NOT NULL,
+    dosen_id    INTEGER NOT NULL REFERENCES pengguna(id),
+    dibuat      TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    UNIQUE (kode_mk, nama_kelas, semester)
+);
+CREATE TABLE IF NOT EXISTS kelas_peserta (
+    kelas_id    INTEGER NOT NULL REFERENCES kelas(id) ON DELETE CASCADE,
+    nim         TEXT NOT NULL REFERENCES mahasiswa(nim) ON DELETE CASCADE,
+    PRIMARY KEY (kelas_id, nim)
+);
 CREATE TABLE IF NOT EXISTS sesi (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     kode_mk     TEXT NOT NULL,
@@ -41,6 +58,7 @@ CREATE TABLE IF NOT EXISTS sesi (
     ruang       TEXT NOT NULL,
     dosen       TEXT NOT NULL,
     dosen_id    INTEGER REFERENCES pengguna(id),
+    kelas_id    INTEGER REFERENCES kelas(id),
     dibuka      TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     ditutup     TEXT
 );
@@ -73,6 +91,38 @@ def _migrasi(conn: sqlite3.Connection) -> None:
     if "dosen_id" not in kolom:
         # Sesi lama tanpa pemilik hanya terlihat oleh admin.
         conn.execute("ALTER TABLE sesi ADD COLUMN dosen_id INTEGER REFERENCES pengguna(id)")
+    if "kelas_id" not in kolom:
+        conn.execute("ALTER TABLE sesi ADD COLUMN kelas_id INTEGER REFERENCES kelas(id)")
+    wajib = {r["name"]: r["notnull"] for r in conn.execute("PRAGMA table_info(mahasiswa)")}
+    if wajib.get("persetujuan_pada"):
+        _longgarkan_persetujuan(conn)
+    conn.commit()
+
+
+def _longgarkan_persetujuan(conn: sqlite3.Connection) -> None:
+    """Jadikan mahasiswa.persetujuan_pada boleh NULL (prosedur rebuild tabel SQLite)."""
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys = OFF")
+    try:
+        conn.executescript("""
+            BEGIN;
+            CREATE TABLE mahasiswa_baru (
+                nim         TEXT PRIMARY KEY,
+                nama        TEXT NOT NULL,
+                prodi       TEXT NOT NULL,
+                persetujuan_pada TEXT,
+                dibuat      TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+            );
+            INSERT INTO mahasiswa_baru (nim, nama, prodi, persetujuan_pada, dibuat)
+                SELECT nim, nama, prodi, persetujuan_pada, dibuat FROM mahasiswa;
+            DROP TABLE mahasiswa;
+            ALTER TABLE mahasiswa_baru RENAME TO mahasiswa;
+            COMMIT;
+        """)
+        if conn.execute("PRAGMA foreign_key_check").fetchall():
+            raise RuntimeError("Migrasi mahasiswa merusak relasi data")
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")
 
 
 def connect(path: Path) -> sqlite3.Connection:
