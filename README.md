@@ -1,7 +1,7 @@
-# Smart Vision JTEIT — Presensi Otomatis Berbasis Wajah
+# Smart Vision JTETI — Presensi Otomatis Berbasis Wajah
 
 Sistem presensi mahasiswa berbasis pengenalan wajah untuk Jurusan Teknik Elektronika
-dan Teknologi Informasi (JTEIT), Fakultas Teknik, Universitas Negeri Makassar.
+dan Teknologi Informasi (JTETI), Fakultas Teknik, Universitas Negeri Makassar.
 
 Kamera kelas mengirim bingkai gambar ke API. Sistem mendeteksi semua wajah,
 mencocokkannya dengan wajah mahasiswa yang telah terdaftar, lalu mencatat kehadiran
@@ -50,7 +50,7 @@ karena alamatnya HTTPS.
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python scripts/unduh_model.py          # unduh + verifikasi checksum model
-python scripts/kelola_pengguna.py tambah admin --nama "Admin JTEIT" --peran admin
+python scripts/kelola_pengguna.py tambah admin --nama "Admin JTETI" --peran admin
 uvicorn app.main:app --reload          # buka http://localhost:8000/dasbor
 ```
 
@@ -156,7 +156,7 @@ Pada contoh uji, wajah asli mendapat skor 1,000, sedangkan foto cetak/layar 0,01
 - Wajah yang sangat kecil (jauh dari kamera) dan pencahayaan ekstrem menurunkan
   keandalan; letakkan kamera agar wajah minimal ±80 piksel.
 - Topeng 3D dan video *deepfake* berkualitas tinggi di luar cakupan model ini.
-- Ambang perlu dikalibrasi dengan data kelas JTEIT sebelum dipakai resmi.
+- Ambang perlu dikalibrasi dengan data kelas JTETI sebelum dipakai resmi.
 
 ## Deteksi wajah hidup aktif (verifikasi gerak kepala)
 
@@ -235,4 +235,4 @@ tentang Pelindungan Data Pribadi. Karena itu:
 - [x] Impor peserta kelas (KRS) dari CSV
 - [ ] Integrasi langsung SIAKAD UNM dan ekspor ke format rekap jurusan
 - [x] Autentikasi per pengguna (dosen, admin jurusan)
-- [ ] Evaluasi akurasi pada data mahasiswa JTEIT (TAR/FAR, variasi pencahayaan kelas)
+- [ ] Evaluasi akurasi pada data mahasiswa JTETI (TAR/FAR, variasi pencahayaan kelas)

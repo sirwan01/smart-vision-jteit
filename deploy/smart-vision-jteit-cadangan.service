@@ -1,6 +1,6 @@
 # /etc/systemd/system/smart-vision-jteit-cadangan.service
 [Unit]
-Description=Cadangan basis data Smart Vision JTEIT
+Description=Cadangan basis data Smart Vision JTETI
 
 [Service]
 Type=oneshot

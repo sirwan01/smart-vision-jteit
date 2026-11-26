@@ -1,6 +1,6 @@
 # /etc/systemd/system/smart-vision-jteit.service
 [Unit]
-Description=Smart Vision JTEIT - Presensi Wajah (FastAPI/uvicorn)
+Description=Smart Vision JTETI - Presensi Wajah (FastAPI/uvicorn)
 After=network-online.target
 Wants=network-online.target
 

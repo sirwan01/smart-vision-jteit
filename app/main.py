@@ -1,4 +1,4 @@
-"""API Presensi Otomatis Berbasis Wajah - JTEIT FT UNM."""
+"""API Presensi Otomatis Berbasis Wajah - JTETI FT UNM."""
 
 import csv
 import hmac
@@ -21,7 +21,7 @@ from app.face_engine import FaceEngine, cocokkan, decode_gambar
 STATIK = Path(__file__).resolve().parent / "static"
 
 app = FastAPI(
-    title="Smart Vision JTEIT - Presensi Wajah",
+    title="Smart Vision JTETI - Presensi Wajah",
     description="Presensi otomatis berbasis pengenalan wajah, "
     "Jurusan Teknik Elektronika dan Teknologi Informasi, FT UNM.",
     version="0.2.0",

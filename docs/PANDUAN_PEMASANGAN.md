@@ -1,6 +1,6 @@
 # Panduan Pemasangan di Server Kampus
 
-Smart Vision JTEIT — Presensi Otomatis Berbasis Wajah
+Smart Vision JTETI — Presensi Otomatis Berbasis Wajah
 Jurusan Teknik Elektronika dan Teknologi Informasi, Fakultas Teknik, Universitas Negeri Makassar
 
 Panduan ini ditujukan bagi admin server/UPT TIK atau teknisi jurusan. Hasil akhirnya:
@@ -93,7 +93,7 @@ sudo nano /etc/smart-vision-jteit/env
 
 ```bash
 cd /opt/smart-vision-jteit
-sudo -u presensi bash -c 'set -a; . /etc/smart-vision-jteit/env; set +a; .venv/bin/python scripts/kelola_pengguna.py tambah admin --nama "Admin JTEIT" --peran admin'
+sudo -u presensi bash -c 'set -a; . /etc/smart-vision-jteit/env; set +a; .venv/bin/python scripts/kelola_pengguna.py tambah admin --nama "Admin JTETI" --peran admin'
 ```
 
 Kata sandi diminta dua kali tanpa tampil di layar (minimal 8 karakter). Akun dosen

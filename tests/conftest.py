@@ -94,7 +94,7 @@ def masuk_sebagai(lingkungan):
 @pytest.fixture
 def klien(masuk_sebagai):
     """Klien yang login sebagai admin jurusan."""
-    return masuk_sebagai("admin", "admin", "Admin JTEIT")
+    return masuk_sebagai("admin", "admin", "Admin JTETI")
 
 
 @pytest.fixture

@@ -1,7 +1,7 @@
 """Kelola akun dari baris perintah (terutama untuk membuat admin pertama).
 
 Contoh:
-    python scripts/kelola_pengguna.py tambah admin --nama "Admin JTEIT" --peran admin
+    python scripts/kelola_pengguna.py tambah admin --nama "Admin JTETI" --peran admin
     python scripts/kelola_pengguna.py reset-sandi dosen.andi
     python scripts/kelola_pengguna.py nonaktifkan dosen.andi
     python scripts/kelola_pengguna.py daftar
