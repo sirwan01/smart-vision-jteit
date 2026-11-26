@@ -1,0 +1,36 @@
+# /etc/systemd/system/smart-vision-jteit.service
+[Unit]
+Description=Smart Vision JTEIT - Presensi Wajah (FastAPI/uvicorn)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=presensi
+Group=presensi
+WorkingDirectory=/opt/smart-vision-jteit
+EnvironmentFile=/etc/smart-vision-jteit/env
+# SATU worker: tantangan verifikasi gerak disimpan di memori proses dan SQLite
+# paling aman dengan satu penulis. Hanya mendengarkan localhost; Nginx di depannya.
+ExecStart=/opt/smart-vision-jteit/.venv/bin/uvicorn app.main:app \
+    --host 127.0.0.1 --port 8000 --workers 1 \
+    --proxy-headers --forwarded-allow-ips 127.0.0.1
+Restart=on-failure
+RestartSec=5
+
+# Pengerasan
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths=/var/lib/smart-vision-jteit
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,17 @@
+# /etc/systemd/system/smart-vision-jteit-cadangan.service
+[Unit]
+Description=Cadangan basis data Smart Vision JTEIT
+
+[Service]
+Type=oneshot
+User=presensi
+Group=presensi
+WorkingDirectory=/opt/smart-vision-jteit
+EnvironmentFile=/etc/smart-vision-jteit/env
+ExecStart=/opt/smart-vision-jteit/.venv/bin/python scripts/cadangkan.py \
+    --tujuan /var/backups/smart-vision-jteit --simpan-hari 30
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/smart-vision-jteit /var/backups/smart-vision-jteit
+UMask=0077

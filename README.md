@@ -37,6 +37,10 @@ python scripts/kelola_pengguna.py tambah admin --nama "Admin JTEIT" --peran admi
 uvicorn app.main:app --reload          # buka http://localhost:8000/dasbor
 ```
 
+> **Pemasangan di server kampus** (HTTPS, systemd, cadangan harian, daftar periksa
+> keamanan & PDP): lihat [`docs/PANDUAN_PEMASANGAN.md`](docs/PANDUAN_PEMASANGAN.md)
+> dan berkas siap pakai di folder [`deploy/`](deploy/).
+
 Akun admin pertama dibuat lewat baris perintah (kata sandi diminta tanpa tampil di
 layar). Setelah itu admin membuat akun dosen dari menu **Pengguna** di dasbor.
 
@@ -205,6 +209,8 @@ tentang Pelindungan Data Pribadi. Karena itu:
 - MiniFASNet — Minivision Silent-Face-Anti-Spoofing (Apache-2.0); ONNX dari yakhyo/face-anti-spoofing (Apache-2.0)
 
 ## Peta jalan
+
+- [x] Panduan pemasangan server (systemd, Nginx HTTPS, cadangan & pemulihan)
 
 - [x] Deteksi wajah hidup pasif (*anti-spoofing*) untuk menolak foto/layar ponsel
 - [x] Deteksi hidup aktif (gerak kepala acak) untuk mode kios dan pendaftaran wajah

@@ -1,0 +1,12 @@
+# /etc/systemd/system/smart-vision-jteit-cadangan.timer
+[Unit]
+Description=Cadangan harian basis data Smart Vision JTEIT
+
+[Timer]
+# Pukul 01.17 waktu server (setel zona waktu server ke Asia/Makassar)
+OnCalendar=*-*-* 01:17:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
