@@ -92,14 +92,6 @@ def test_hapus_mahasiswa_menghapus_wajah_dan_presensi(klien, mesin):
     assert klien.delete(f"/mahasiswa/{MHS['nim']}").status_code == 404
 
 
-def test_api_key(klien, monkeypatch):
-    monkeypatch.setenv("API_KEY", "rahasia-uji")
-    main.settings.cache_clear()
-    assert klien.get("/mahasiswa").status_code == 401
-    assert klien.get("/mahasiswa", headers={"X-API-Key": "rahasia-uji"}).status_code == 200
-    assert klien.get("/kesehatan").status_code == 200
-
-
 # ---------- anti-spoofing ----------
 
 def test_foto_pendaftaran_palsu_ditolak(klien, mesin):
@@ -159,21 +151,6 @@ def _sesi(klien, kode="TIK301"):
     return klien.post(
         "/sesi", json={"kode_mk": kode, "nama_mk": "Visi Komputer", "ruang": "GD-301", "dosen": "Dr. X"}
     ).json()
-
-
-def test_dasbor_disajikan(klien):
-    r = klien.get("/", follow_redirects=True)
-    assert r.status_code == 200 and "Dasbor Presensi Wajah" in r.text
-    assert klien.get("/kesehatan").json() == {"status": "ok", "perlu_api_key": False}
-
-
-def test_dasbor_tetap_terbuka_tapi_data_terkunci(klien, monkeypatch):
-    monkeypatch.setenv("API_KEY", "rahasia-uji")
-    main.settings.cache_clear()
-    assert klien.get("/dasbor").status_code == 200
-    assert klien.get("/kesehatan").json()["perlu_api_key"] is True
-    for path in ("/sesi", "/ringkasan", "/rekap"):
-        assert klien.get(path).status_code == 401
 
 
 def test_daftar_sesi_dan_ringkasan(klien, mesin):

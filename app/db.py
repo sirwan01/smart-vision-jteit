@@ -20,12 +20,27 @@ CREATE TABLE IF NOT EXISTS wajah (
     embedding   BLOB NOT NULL,
     dibuat      TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
+CREATE TABLE IF NOT EXISTS pengguna (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    username    TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    nama        TEXT NOT NULL,
+    peran       TEXT NOT NULL CHECK (peran IN ('admin', 'dosen')),
+    hash_sandi  TEXT NOT NULL,
+    aktif       INTEGER NOT NULL DEFAULT 1,
+    dibuat      TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+CREATE TABLE IF NOT EXISTS token_sesi (
+    hash        TEXT PRIMARY KEY,
+    pengguna_id INTEGER NOT NULL REFERENCES pengguna(id) ON DELETE CASCADE,
+    kedaluwarsa REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS sesi (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     kode_mk     TEXT NOT NULL,
     nama_mk     TEXT NOT NULL,
     ruang       TEXT NOT NULL,
     dosen       TEXT NOT NULL,
+    dosen_id    INTEGER REFERENCES pengguna(id),
     dibuka      TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     ditutup     TEXT
 );
@@ -54,6 +69,10 @@ def _migrasi(conn: sqlite3.Connection) -> None:
     kolom = {r["name"] for r in conn.execute("PRAGMA table_info(presensi)")}
     if "skor_hidup" not in kolom:
         conn.execute("ALTER TABLE presensi ADD COLUMN skor_hidup REAL")
+    kolom = {r["name"] for r in conn.execute("PRAGMA table_info(sesi)")}
+    if "dosen_id" not in kolom:
+        # Sesi lama tanpa pemilik hanya terlihat oleh admin.
+        conn.execute("ALTER TABLE sesi ADD COLUMN dosen_id INTEGER REFERENCES pengguna(id)")
 
 
 def connect(path: Path) -> sqlite3.Connection:

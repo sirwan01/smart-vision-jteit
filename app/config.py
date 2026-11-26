@@ -20,6 +20,8 @@ class Settings:
     # Deteksi wajah hidup (anti-spoofing) dan probabilitas "asli" minimum.
     anti_spoofing: bool
     ambang_hidup: float
+    # Paksa atribut Secure pada cookie login (None = otomatis bila HTTPS).
+    cookie_aman: bool | None
 
 
 def get_settings() -> Settings:
@@ -31,4 +33,5 @@ def get_settings() -> Settings:
         api_key=os.getenv("API_KEY") or None,
         anti_spoofing=os.getenv("ANTI_SPOOFING", "1").lower() not in ("0", "false", "tidak"),
         ambang_hidup=float(os.getenv("AMBANG_HIDUP", "0.5")),
+        cookie_aman={"1": True, "0": False}.get(os.getenv("COOKIE_AMAN", "")),
     )

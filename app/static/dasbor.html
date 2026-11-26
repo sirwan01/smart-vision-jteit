@@ -65,6 +65,12 @@ tr.pilih:hover, tr.aktif { background: var(--bg); }
 .l-ok { background: var(--ok-bg); color: var(--ok); }
 .l-bahaya { background: var(--bahaya-bg); color: var(--bahaya); }
 .l-waspada { background: var(--waspada-bg); color: var(--waspada); }
+.l-info { background: var(--bg); color: var(--aksen); border: 1px solid var(--garis); }
+.akun { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+.sel-aksi { white-space: normal; min-width: 130px; }
+.tombol-baris { display: flex; flex-wrap: wrap; gap: 6px; }
+.tombol-baris button { padding: 5px 10px; font-size: 13px; }
+.galat { color: var(--bahaya); min-height: 1.5em; font-size: 14px; }
 .redup { color: var(--redup); }
 .kosong { color: var(--redup); padding: 12px 0; }
 .aksi { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
@@ -88,8 +94,13 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
       <button role="tab" data-tab="sesi" aria-selected="true">Sesi</button>
       <button role="tab" data-tab="mahasiswa" aria-selected="false">Mahasiswa</button>
       <button role="tab" data-tab="rekap" aria-selected="false">Rekap</button>
-      <button id="keluar" hidden title="Hapus API key dari peramban ini">Keluar</button>
+      <button role="tab" data-tab="pengguna" aria-selected="false" id="tab-btn-pengguna" hidden>Pengguna</button>
     </nav>
+    <div class="akun" id="akun" hidden>
+      <span id="akun-nama"></span> <span class="lencana l-info" id="akun-peran"></span>
+      <button id="b-sandi">Ganti sandi</button>
+      <button id="b-keluar">Keluar</button>
+    </div>
   </div>
 </header>
 
@@ -114,7 +125,7 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
               <label>Ruang<input name="ruang" required placeholder="GD-301"></label>
             </div>
             <label>Nama mata kuliah<input name="nama_mk" required placeholder="Visi Komputer"></label>
-            <label>Dosen<input name="dosen" required></label>
+            <p class="redup" style="font-size:13px;margin:0 0 8px">Sesi dicatat atas nama akun Anda.</p>
             <button class="utama" type="submit">Buka sesi</button>
           </form>
         </div>
@@ -211,15 +222,54 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
         daftar KRS belum terhubung dengan SIAKAD.</p>
     </div>
   </section>
+  <!-- ================= PENGGUNA (admin) ================= -->
+  <section id="tab-pengguna" hidden>
+    <div class="dua">
+      <div class="kartu">
+        <h2>Tambah akun</h2>
+        <form id="f-pengguna">
+          <label>Nama pengguna<input name="username" required minlength="3" maxlength="40"
+            pattern="[A-Za-z0-9._\-]+" placeholder="dosen.nama" autocapitalize="none"></label>
+          <label>Nama lengkap &amp; gelar<input name="nama" required placeholder="Dr. Nama, M.T."></label>
+          <label>Peran<select name="peran"><option value="dosen">Dosen</option><option value="admin">Admin jurusan</option></select></label>
+          <label>Kata sandi awal (min. 8 karakter)<input name="sandi" type="password" required minlength="8" autocomplete="new-password"></label>
+          <p class="redup" style="font-size:13px;margin:0 0 8px">Sampaikan kata sandi awal secara langsung; minta dosen menggantinya setelah masuk.</p>
+          <button class="utama" type="submit">Buat akun</button>
+        </form>
+      </div>
+      <div class="kartu">
+        <h2>Akun terdaftar</h2>
+        <div class="gulir"><table>
+          <thead><tr><th>Nama</th><th>Pengguna</th><th>Peran</th><th class="angka">Sesi</th><th>Status</th><th></th></tr></thead>
+          <tbody id="t-pengguna"></tbody>
+        </table></div>
+      </div>
+    </div>
+  </section>
 </main>
 
-<!-- Dialog API key -->
-<dialog id="d-kunci">
-  <form method="dialog" id="f-kunci">
+<!-- Dialog masuk -->
+<dialog id="d-masuk">
+  <form id="f-masuk">
     <h2 style="margin-top:0">Masuk dasbor</h2>
-    <p class="redup">Server ini dilindungi API key. Masukkan kunci yang diberikan admin jurusan.</p>
-    <label>API key<input id="i-kunci" type="password" required autocomplete="current-password"></label>
+    <p class="redup">Gunakan akun dosen atau admin jurusan.</p>
+    <label>Nama pengguna<input name="username" required autocomplete="username" autocapitalize="none"></label>
+    <label>Kata sandi<input name="sandi" type="password" required autocomplete="current-password"></label>
+    <p class="galat" id="masuk-galat"></p>
     <button class="utama" type="submit">Masuk</button>
+  </form>
+</dialog>
+
+<!-- Dialog ganti sandi -->
+<dialog id="d-sandi">
+  <form id="f-sandi">
+    <h2 style="margin-top:0">Ganti kata sandi</h2>
+    <label>Kata sandi lama<input name="sandi_lama" type="password" required autocomplete="current-password"></label>
+    <label>Kata sandi baru (min. 8 karakter)<input name="sandi_baru" type="password" required minlength="8" autocomplete="new-password"></label>
+    <label>Ulangi kata sandi baru<input name="ulang" type="password" required minlength="8" autocomplete="new-password"></label>
+    <p class="galat" id="sandi-galat"></p>
+    <div class="aksi"><button class="utama" type="submit">Simpan</button>
+      <button type="button" id="sandi-batal">Batal</button></div>
   </form>
 </dialog>
 
@@ -244,9 +294,7 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
 <script>
 "use strict";
 const $ = (s) => document.querySelector(s);
-const KUNCI = "presensi_api_key";
-let apiKey = "";
-try { apiKey = sessionStorage.getItem(KUNCI) || ""; } catch (_) {}
+let saya = null;
 
 function esc(v) {
   return String(v ?? "").replace(/[&<>"']/g, (c) =>
@@ -264,48 +312,75 @@ function pesan(t, galat = false) {
 
 async function api(path, opts = {}) {
   const headers = Object.assign({}, opts.headers || {});
-  if (apiKey) headers["X-API-Key"] = apiKey;
   if (opts.json !== undefined) {
     headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(opts.json);
   }
-  const r = await fetch(path, { ...opts, headers });
-  if (r.status === 401) { mintaKunci(); throw new Error("API key diperlukan"); }
+  const r = await fetch(path, { ...opts, headers, credentials: "same-origin" });
+  if (r.status === 401 && path !== "/auth/masuk") { tampilkanMasuk(); throw new Error("Sesi login berakhir"); }
   if (!r.ok) {
     let d = r.statusText;
-    try { const j = await r.json(); d = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail); } catch (_) {}
+    try { const j = await r.json(); d = typeof j.detail === "string" ? j.detail : "Isian tidak valid"; } catch (_) {}
     throw new Error(d);
   }
   return opts.raw ? r : r.json();
 }
 
-function mintaKunci() {
-  const d = $("#d-kunci");
-  if (!d.open) d.showModal();
+// ---------- masuk / keluar ----------
+function tampilkanMasuk() {
+  saya = null; hentikanKamera();
+  $("#akun").hidden = true;
+  const d = $("#d-masuk");
+  if (!d.open) { d.showModal(); d.querySelector("[name=username]").focus(); }
 }
-$("#f-kunci").addEventListener("submit", () => {
-  apiKey = $("#i-kunci").value.trim();
-  try { sessionStorage.setItem(KUNCI, apiKey); } catch (_) {}
-  $("#keluar").hidden = false;
-  muatSemua();
+$("#d-masuk").addEventListener("cancel", (e) => e.preventDefault());  // tidak bisa ditutup tanpa login
+$("#f-masuk").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  $("#masuk-galat").textContent = "";
+  try {
+    const p = await api("/auth/masuk", { method: "POST", json: { username: f.username.value.trim(), sandi: f.sandi.value } });
+    f.reset(); $("#d-masuk").close(); setelahMasuk(p);
+  } catch (err) { $("#masuk-galat").textContent = err.message; f.sandi.value = ""; }
 });
-$("#keluar").addEventListener("click", () => {
-  apiKey = "";
-  try { sessionStorage.removeItem(KUNCI); } catch (_) {}
-  location.reload();
+function setelahMasuk(p) {
+  saya = p;
+  $("#akun").hidden = false;
+  $("#akun-nama").textContent = p.nama;
+  $("#akun-peran").textContent = p.peran === "admin" ? "Admin" : "Dosen";
+  $("#tab-btn-pengguna").hidden = p.peran !== "admin";
+  if (p.peran !== "admin" && tabAktif === "pengguna") pindahTab("sesi");
+  muatSemua();
+}
+$("#b-keluar").addEventListener("click", async () => {
+  try { await api("/auth/keluar", { method: "POST" }); } catch (_) {}
+  sesiDipilih = null; $("#detail-isi").hidden = true; $("#detail-kosong").hidden = false;
+  tampilkanMasuk();
+});
+$("#b-sandi").addEventListener("click", () => { $("#sandi-galat").textContent = ""; $("#d-sandi").showModal(); });
+$("#sandi-batal").addEventListener("click", () => { $("#f-sandi").reset(); $("#d-sandi").close(); });
+$("#f-sandi").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  if (f.sandi_baru.value !== f.ulang.value) { $("#sandi-galat").textContent = "Kata sandi baru tidak sama"; return; }
+  try {
+    await api("/auth/ganti-sandi", { method: "POST", json: { sandi_lama: f.sandi_lama.value, sandi_baru: f.sandi_baru.value } });
+    f.reset(); $("#d-sandi").close(); pesan("Kata sandi diganti; sesi di perangkat lain dikeluarkan");
+  } catch (err) { $("#sandi-galat").textContent = err.message; }
 });
 
 // ---------- tab ----------
 let tabAktif = "sesi";
+function pindahTab(nama) {
+  tabAktif = nama;
+  document.querySelectorAll("nav [data-tab]").forEach((x) =>
+    x.setAttribute("aria-selected", String(x.dataset.tab === nama)));
+  ["sesi", "mahasiswa", "rekap", "pengguna"].forEach((t) => ($("#tab-" + t).hidden = t !== nama));
+  const muat = { mahasiswa: muatMahasiswa, rekap: muatDaftarMK, pengguna: muatPengguna }[nama];
+  if (muat) muat().catch((err) => pesan(err.message, true));
+}
 document.querySelectorAll("nav [data-tab]").forEach((b) =>
-  b.addEventListener("click", () => {
-    tabAktif = b.dataset.tab;
-    document.querySelectorAll("nav [data-tab]").forEach((x) =>
-      x.setAttribute("aria-selected", String(x === b)));
-    ["sesi", "mahasiswa", "rekap"].forEach((t) => ($("#tab-" + t).hidden = t !== tabAktif));
-    if (tabAktif === "mahasiswa") muatMahasiswa();
-    if (tabAktif === "rekap") muatDaftarMK();
-  }));
+  b.addEventListener("click", () => pindahTab(b.dataset.tab)));
 
 // ---------- sesi ----------
 let sesiDipilih = null;
@@ -324,7 +399,7 @@ async function muatSesi() {
   $("#sesi-kosong").hidden = daftar.length > 0;
   $("#t-sesi").innerHTML = daftar.map((s) => `
     <tr class="pilih ${s.id === sesiDipilih ? "aktif" : ""}" data-id="${s.id}">
-      <td><b>${esc(s.kode_mk)}</b><br><span class="redup">${esc(s.ruang)}</span></td>
+      <td><b>${esc(s.kode_mk)}</b><br><span class="redup">${esc(s.ruang)}${saya?.peran === "admin" ? " · " + esc(s.dosen) : ""}</span></td>
       <td>${esc(s.dibuka.slice(0, 16))}</td>
       <td class="angka">${s.jumlah_hadir}${s.jumlah_palsu ? ` <span class="lencana l-bahaya" title="Percobaan palsu">${s.jumlah_palsu}</span>` : ""}</td>
       <td>${s.ditutup ? '<span class="lencana l-waspada">Ditutup</span>' : '<span class="lencana l-ok">Aktif</span>'}</td>
@@ -454,7 +529,7 @@ function tampilkanMahasiswa() {
     <td>${esc(m.nim)}</td><td>${esc(m.nama)}</td><td class="redup">${esc(m.prodi)}</td>
     <td class="angka">${m.jumlah_wajah ? m.jumlah_wajah : '<span class="lencana l-waspada">0</span>'}</td>
     <td><button data-wajah="${esc(m.nim)}">Foto wajah</button>
-        <button class="bahaya" data-hapus="${esc(m.nim)}">Hapus</button></td></tr>`).join("");
+        ${saya?.peran === "admin" ? `<button class="bahaya" data-hapus="${esc(m.nim)}">Hapus</button>` : ""}</td></tr>`).join("");
   document.querySelectorAll("[data-wajah]").forEach((b) =>
     b.addEventListener("click", () => bukaWajah(b.dataset.wajah)));
   document.querySelectorAll("[data-hapus]").forEach((b) =>
@@ -539,23 +614,50 @@ async function muatRekap() {
 $("#r-mk").addEventListener("change", muatRekap);
 $("#r-batas").addEventListener("change", muatRekap);
 
+// ---------- pengguna (admin) ----------
+async function muatPengguna() {
+  const d = await api("/pengguna");
+  $("#t-pengguna").innerHTML = d.map((u) => `<tr>
+    <td>${esc(u.nama)}</td><td class="redup">${esc(u.username)}</td>
+    <td>${u.peran === "admin" ? "Admin" : "Dosen"}</td><td class="angka">${u.jumlah_sesi}</td>
+    <td>${u.aktif ? '<span class="lencana l-ok">Aktif</span>' : '<span class="lencana l-bahaya">Nonaktif</span>'}</td>
+    <td class="sel-aksi">${u.id === saya?.id ? '<span class="redup">akun Anda</span>' : `<div class="tombol-baris">
+      <button data-aktif="${u.id}" data-nilai="${u.aktif ? 0 : 1}">${u.aktif ? "Nonaktifkan" : "Aktifkan"}</button>
+      <button data-reset="${u.id}" data-nama="${esc(u.nama)}">Reset sandi</button></div>`}</td></tr>`).join("");
+  document.querySelectorAll("[data-aktif]").forEach((b) => b.addEventListener("click", async () => {
+    try {
+      await api(`/pengguna/${b.dataset.aktif}`, { method: "PATCH", json: { aktif: b.dataset.nilai === "1" } });
+      pesan(b.dataset.nilai === "1" ? "Akun diaktifkan" : "Akun dinonaktifkan; sesinya diakhiri"); muatPengguna();
+    } catch (err) { pesan(err.message, true); }
+  }));
+  document.querySelectorAll("[data-reset]").forEach((b) => b.addEventListener("click", async () => {
+    const sandi = prompt(`Kata sandi baru untuk ${b.dataset.nama} (min. 8 karakter):`);
+    if (!sandi) return;
+    try {
+      await api(`/pengguna/${b.dataset.reset}`, { method: "PATCH", json: { sandi } });
+      pesan("Kata sandi direset; sesi lama akun itu diakhiri");
+    } catch (err) { pesan(err.message, true); }
+  }));
+}
+$("#f-pengguna").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const data = Object.fromEntries(new FormData(e.target));
+  try {
+    await api("/pengguna", { method: "POST", json: data });
+    pesan(`Akun ${data.username} dibuat`); e.target.reset(); muatPengguna();
+  } catch (err) { pesan(err.message, true); }
+});
+
 // ---------- mulai ----------
 async function muatSemua() {
   try { await Promise.all([muatRingkasan(), muatSesi()]); await muatDetail(); }
-  catch (err) { if (!$("#d-kunci").open) pesan(err.message, true); }
+  catch (err) { if (!$("#d-masuk").open) pesan(err.message, true); }
 }
 (async () => {
-  try {
-    const k = await (await fetch("/kesehatan")).json();
-    if (k.perlu_api_key) {
-      $("#keluar").hidden = !apiKey;
-      if (!apiKey) return mintaKunci();
-    }
-  } catch (_) {}
-  muatSemua();
+  try { setelahMasuk(await api("/auth/saya")); } catch (_) { /* dialog masuk sudah tampil */ }
 })();
 // Segarkan otomatis selama tab Sesi terbuka.
-setInterval(() => { if (tabAktif === "sesi" && !document.hidden && !$("#d-kunci").open) muatSemua(); }, 5000);
+setInterval(() => { if (saya && tabAktif === "sesi" && !document.hidden) muatSemua(); }, 5000);
 </script>
 </body>
 </html>

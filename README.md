@@ -33,19 +33,43 @@ Pada CPU 4 inti, satu bingkai berisi beberapa wajah diproses sekitar 50 ms.
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python scripts/unduh_model.py          # unduh + verifikasi checksum model
-uvicorn app.main:app --reload          # buka http://localhost:8000/docs
+python scripts/kelola_pengguna.py tambah admin --nama "Admin JTEIT" --peran admin
+uvicorn app.main:app --reload          # buka http://localhost:8000/dasbor
 ```
+
+Akun admin pertama dibuat lewat baris perintah (kata sandi diminta tanpa tampil di
+layar). Setelah itu admin membuat akun dosen dari menu **Pengguna** di dasbor.
 
 Klien kamera (pada komputer yang terhubung ke webcam atau kamera IP):
 
 ```bash
-python scripts/kamera_presensi.py --sesi 1 --api http://SERVER:8000 --interval 3
+API_KEY=kunci-perangkat python scripts/kamera_presensi.py --sesi 1 --api http://SERVER:8000 --interval 3
 ```
+
+## Akun dan hak akses
+
+| Peran | Hak |
+|---|---|
+| **Admin jurusan** | Semua sesi dan rekap, kelola akun (buat, nonaktifkan, reset sandi), hapus data mahasiswa |
+| **Dosen** | Hanya sesi yang ia buka sendiri dan rekap mata kuliahnya; daftarkan mahasiswa dan foto wajah |
+| **Perangkat kamera** (`X-API-Key`) | Hanya mengirim bingkai ke `POST /sesi/{id}/presensi`; tidak dapat membaca data |
+
+- Kata sandi di-*hash* dengan scrypt + garam acak; minimal 8 karakter.
+- Login menghasilkan cookie `HttpOnly`, `SameSite=Strict`, berlaku 12 jam; di server
+  hanya disimpan SHA-256 tokennya. Atribut `Secure` aktif otomatis di balik HTTPS.
+- 5 kali gagal masuk dalam 15 menit mengunci nama pengguna itu selama 15 menit.
+- Ganti/reset sandi, penonaktifan, atau perubahan peran langsung mengakhiri sesi
+  login lain milik akun tersebut.
+- Sesi milik dosen lain dijawab 404 sehingga keberadaannya tidak bocor.
+- Kelas paralel (kode MK sama, dosen berbeda) direkap terpisah per dosen; admin
+  melihat gabungannya.
+
+Pengelolaan dari baris perintah: `python scripts/kelola_pengguna.py daftar | tambah |
+reset-sandi | nonaktifkan | aktifkan` (lihat `--help`).
 
 ## Dasbor web dosen
 
-Buka `http://SERVER:8000/dasbor` (atau `/`). Bila `API_KEY` diisi, dasbor meminta kunci
-tersebut sekali per tab peramban (disimpan di `sessionStorage`, hilang saat tab ditutup).
+Buka `http://SERVER:8000/dasbor` (atau `/`) dan masuk dengan akun dosen/admin.
 
 | Menu | Fungsi |
 |---|---|
@@ -53,6 +77,8 @@ tersebut sekali per tab peramban (disimpan di `sessionStorage`, hilang saat tab 
 | **Kamera kelas dari peramban** | Laptop dosen menjadi kamera presensi: bingkai webcam dikirim tiap 3 detik |
 | **Mahasiswa** | Daftarkan mahasiswa (wajib centang persetujuan), ambil foto wajah lewat webcam atau unggah berkas, cari, hapus data |
 | **Rekap** | Persentase kehadiran per mata kuliah dengan batas minimal yang dapat diatur (bawaan 75%) |
+| **Pengguna** (admin) | Buat akun dosen, nonaktifkan/aktifkan, reset kata sandi |
+| **Ganti sandi** | Setiap pengguna dapat mengganti kata sandinya sendiri |
 
 Webcam di peramban hanya berfungsi melalui **HTTPS** atau `localhost`.
 
@@ -101,7 +127,8 @@ Pada contoh uji, wajah asli mendapat skor 1,000, sedangkan foto cetak/layar 0,01
 | `MODEL_DIR` | `models` | Folder model ONNX |
 | `AMBANG_KEMIRIPAN` | `0.363` | Ambang kosinus SFace; naikkan untuk mengurangi salah kenal |
 | `AMBANG_DETEKSI` | `0.8` | Skor minimum deteksi wajah |
-| `API_KEY` | (kosong) | Bila diisi, setiap permintaan wajib membawa header `X-API-Key` |
+| `API_KEY` | (kosong) | Kunci perangkat kamera kelas (`X-API-Key`), hanya untuk mengirim bingkai presensi |
+| `COOKIE_AMAN` | otomatis | `1` memaksa cookie `Secure` (mis. di balik *reverse proxy* HTTPS), `0` mematikan |
 | `ANTI_SPOOFING` | `1` | `0` untuk menonaktifkan deteksi wajah hidup |
 | `AMBANG_HIDUP` | `0.5` | Probabilitas "asli" minimum; naikkan agar lebih ketat |
 | `TZ` | — | Disarankan `Asia/Makassar` agar waktu presensi sesuai WITA |
@@ -125,7 +152,8 @@ tentang Pelindungan Data Pribadi. Karena itu:
 - Yang disimpan hanya **embedding** numerik, bukan foto wajah.
 - `DELETE /mahasiswa/{nim}` menghapus identitas, embedding, dan riwayat presensi.
 - Folder `data/`, berkas `*.db`, dan model **tidak** masuk repositori (`.gitignore`).
-- Untuk penerapan di luar jaringan lokal, isi `API_KEY` dan gunakan HTTPS.
+- Setiap akses data memerlukan login; hanya admin yang dapat menghapus data mahasiswa.
+- Untuk penerapan di luar jaringan lokal, gunakan HTTPS.
 
 ## Lisensi model pihak ketiga
 
@@ -138,5 +166,5 @@ tentang Pelindungan Data Pribadi. Karena itu:
 - [ ] Deteksi hidup aktif (kedip/gerak kepala) sebagai lapisan kedua
 - [x] Dasbor web dosen (sesi, kamera peramban, pendaftaran wajah, audit, rekap per MK)
 - [ ] Integrasi SIAKAD UNM dan ekspor ke format rekap jurusan
-- [ ] Autentikasi per pengguna (dosen, admin jurusan)
+- [x] Autentikasi per pengguna (dosen, admin jurusan)
 - [ ] Evaluasi akurasi pada data mahasiswa JTEIT (TAR/FAR, variasi pencahayaan kelas)

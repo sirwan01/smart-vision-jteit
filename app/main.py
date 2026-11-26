@@ -1,16 +1,19 @@
 """API Presensi Otomatis Berbasis Wajah - JTEIT FT UNM."""
 
 import csv
+import hmac
 import io
 import sqlite3
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from app import db
+from app import auth, db
+from app.auth import Pengguna
 from app.config import Settings, get_settings
 from app.face_engine import FaceEngine, cocokkan, decode_gambar
 
@@ -20,7 +23,7 @@ app = FastAPI(
     title="Smart Vision JTEIT - Presensi Wajah",
     description="Presensi otomatis berbasis pengenalan wajah, "
     "Jurusan Teknik Elektronika dan Teknologi Informasi, FT UNM.",
-    version="0.1.0",
+    version="0.2.0",
 )
 
 
@@ -53,13 +56,33 @@ def get_db():
         conn.close()
 
 
-def cek_api_key(x_api_key: str | None = Header(default=None)):
+def pengguna_login(request: Request, conn=Depends(get_db)) -> Pengguna:
+    p = auth.pengguna_dari_token(conn, request.cookies.get(auth.NAMA_COOKIE))
+    if p is None:
+        raise HTTPException(401, "Silakan masuk terlebih dahulu")
+    return p
+
+
+def wajib_admin(p: Pengguna = Depends(pengguna_login)) -> Pengguna:
+    if not p.admin:
+        raise HTTPException(403, "Hanya admin jurusan")
+    return p
+
+
+def pengirim_presensi(
+    request: Request,
+    x_api_key: str | None = Header(default=None),
+    conn=Depends(get_db),
+) -> Pengguna | None:
+    """Pengirim bingkai: pengguna login, ATAU perangkat kamera dengan kunci perangkat."""
     kunci = settings().api_key
-    if kunci and x_api_key != kunci:
-        raise HTTPException(401, "X-API-Key tidak valid")
+    if kunci and x_api_key and hmac.compare_digest(x_api_key, kunci):
+        return None  # perangkat kamera
+    return pengguna_login(request, conn)
 
 
-Aman = Depends(cek_api_key)
+Login = Depends(pengguna_login)
+Admin = Depends(wajib_admin)
 
 
 # ---------- skema ----------
@@ -74,10 +97,33 @@ class MahasiswaBaru(BaseModel):
 
 
 class SesiBaru(BaseModel):
-    kode_mk: str
-    nama_mk: str
-    ruang: str
-    dosen: str
+    kode_mk: str = Field(min_length=1)
+    nama_mk: str = Field(min_length=1)
+    ruang: str = Field(min_length=1)
+
+
+class DataMasuk(BaseModel):
+    username: str
+    sandi: str
+
+
+class GantiSandi(BaseModel):
+    sandi_lama: str
+    sandi_baru: str
+
+
+class PenggunaBaru(BaseModel):
+    username: str = Field(min_length=3, max_length=40, pattern=r"^[A-Za-z0-9._-]+$")
+    nama: str = Field(min_length=1)
+    peran: Literal["admin", "dosen"] = "dosen"
+    sandi: str
+
+
+class UbahPengguna(BaseModel):
+    nama: str | None = None
+    peran: Literal["admin", "dosen"] | None = None
+    aktif: bool | None = None
+    sandi: str | None = None  # reset kata sandi oleh admin
 
 
 async def baca_gambar(berkas: UploadFile):
@@ -87,18 +133,26 @@ async def baca_gambar(berkas: UploadFile):
         raise HTTPException(400, str(e))
 
 
-def ambil_sesi(conn: sqlite3.Connection, sesi_id: int) -> sqlite3.Row:
+def ambil_sesi(conn: sqlite3.Connection, sesi_id: int, p: Pengguna | None) -> sqlite3.Row:
+    """Ambil sesi bila boleh diakses: admin/perangkat semua sesi, dosen hanya miliknya.
+
+    Sesi milik dosen lain dijawab 404 agar keberadaannya tidak bocor.
+    """
     sesi = conn.execute("SELECT * FROM sesi WHERE id = ?", (sesi_id,)).fetchone()
-    if sesi is None:
+    if sesi is None or (p is not None and not p.admin and sesi["dosen_id"] != p.id):
         raise HTTPException(404, "Sesi tidak ditemukan")
     return sesi
 
 
-# ---------- endpoint ----------
+def filter_pemilik(p: Pengguna, alias: str = "s") -> tuple[str, list]:
+    return ("1 = 1", []) if p.admin else (f"{alias}.dosen_id = ?", [p.id])
+
+
+# ---------- umum ----------
 
 @app.get("/kesehatan")
 def kesehatan():
-    return {"status": "ok", "perlu_api_key": settings().api_key is not None}
+    return {"status": "ok"}
 
 
 @app.get("/", include_in_schema=False)
@@ -108,11 +162,112 @@ def beranda():
 
 @app.get("/dasbor", include_in_schema=False)
 def dasbor():
-    """Dasbor web dosen (satu halaman; data diambil lewat API dengan X-API-Key)."""
+    """Dasbor web dosen (satu halaman; data diambil lewat API dengan cookie login)."""
     return FileResponse(STATIK / "dasbor.html", media_type="text/html")
 
 
-@app.post("/mahasiswa", status_code=201, dependencies=[Aman])
+# ---------- autentikasi ----------
+
+@app.post("/auth/masuk")
+def masuk(data: DataMasuk, request: Request, response: Response, conn=Depends(get_db)):
+    p = auth.masuk(conn, data.username.strip(), data.sandi)
+    response.set_cookie(
+        auth.NAMA_COOKIE,
+        auth.buat_token(conn, p.id),
+        max_age=auth.UMUR_SESI_DETIK,
+        httponly=True,
+        samesite="strict",
+        secure=auth.cookie_aman(request, settings().cookie_aman),
+        path="/",
+    )
+    return p.publik()
+
+
+@app.post("/auth/keluar")
+def keluar(request: Request, response: Response, conn=Depends(get_db)):
+    token = request.cookies.get(auth.NAMA_COOKIE)
+    if token:
+        auth.hapus_token(conn, token)
+    response.delete_cookie(auth.NAMA_COOKIE, path="/")
+    return {"keluar": True}
+
+
+@app.get("/auth/saya")
+def saya(p: Pengguna = Login):
+    return p.publik()
+
+
+@app.post("/auth/ganti-sandi")
+def ganti_sandi(data: GantiSandi, request: Request, p: Pengguna = Login, conn=Depends(get_db)):
+    lama = conn.execute("SELECT hash_sandi FROM pengguna WHERE id = ?", (p.id,)).fetchone()
+    if not auth.cocok_sandi(data.sandi_lama, lama["hash_sandi"]):
+        raise HTTPException(403, "Kata sandi lama salah")
+    auth.periksa_kekuatan(data.sandi_baru)
+    conn.execute("UPDATE pengguna SET hash_sandi = ? WHERE id = ?",
+                 (auth.hash_sandi(data.sandi_baru), p.id))
+    # Keluarkan semua sesi lain milik pengguna ini.
+    token = request.cookies.get(auth.NAMA_COOKIE)
+    conn.execute("DELETE FROM token_sesi WHERE pengguna_id = ? AND hash != ?",
+                 (p.id, auth._hash_token(token or "")))
+    conn.commit()
+    return {"diubah": True}
+
+
+# ---------- pengguna (admin) ----------
+
+@app.get("/pengguna", dependencies=[Admin])
+def daftar_pengguna(conn=Depends(get_db)):
+    rows = conn.execute(
+        "SELECT u.id, u.username, u.nama, u.peran, u.aktif, u.dibuat, "
+        "(SELECT COUNT(*) FROM sesi s WHERE s.dosen_id = u.id) AS jumlah_sesi "
+        "FROM pengguna u ORDER BY u.peran, u.nama"
+    ).fetchall()
+    return [{**dict(r), "aktif": bool(r["aktif"])} for r in rows]
+
+
+@app.post("/pengguna", status_code=201, dependencies=[Admin])
+def tambah_pengguna(data: PenggunaBaru, conn=Depends(get_db)):
+    auth.periksa_kekuatan(data.sandi)
+    try:
+        cur = conn.execute(
+            "INSERT INTO pengguna (username, nama, peran, hash_sandi) VALUES (?, ?, ?, ?)",
+            (data.username, data.nama, data.peran, auth.hash_sandi(data.sandi)),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        raise HTTPException(409, f"Nama pengguna {data.username} sudah dipakai")
+    return {"id": cur.lastrowid, "username": data.username, "nama": data.nama,
+            "peran": data.peran, "aktif": True}
+
+
+@app.patch("/pengguna/{pengguna_id}")
+def ubah_pengguna(pengguna_id: int, data: UbahPengguna,
+                  admin: Pengguna = Admin, conn=Depends(get_db)):
+    if conn.execute("SELECT 1 FROM pengguna WHERE id = ?", (pengguna_id,)).fetchone() is None:
+        raise HTTPException(404, "Pengguna tidak ditemukan")
+    if pengguna_id == admin.id and (data.aktif is False or data.peran == "dosen"):
+        raise HTTPException(409, "Tidak dapat menonaktifkan atau menurunkan peran akun sendiri")
+    if data.nama is not None:
+        conn.execute("UPDATE pengguna SET nama = ? WHERE id = ?", (data.nama, pengguna_id))
+    if data.peran is not None:
+        conn.execute("UPDATE pengguna SET peran = ? WHERE id = ?", (data.peran, pengguna_id))
+    if data.aktif is not None:
+        conn.execute("UPDATE pengguna SET aktif = ? WHERE id = ?", (int(data.aktif), pengguna_id))
+    if data.sandi is not None:
+        auth.periksa_kekuatan(data.sandi)
+        conn.execute("UPDATE pengguna SET hash_sandi = ? WHERE id = ?",
+                     (auth.hash_sandi(data.sandi), pengguna_id))
+    if data.aktif is False or data.sandi is not None or data.peran is not None:
+        conn.execute("DELETE FROM token_sesi WHERE pengguna_id = ?", (pengguna_id,))
+    conn.commit()
+    r = conn.execute("SELECT id, username, nama, peran, aktif FROM pengguna WHERE id = ?",
+                     (pengguna_id,)).fetchone()
+    return {**dict(r), "aktif": bool(r["aktif"])}
+
+
+# ---------- mahasiswa ----------
+
+@app.post("/mahasiswa", status_code=201, dependencies=[Login])
 def daftar_mahasiswa(m: MahasiswaBaru, conn=Depends(get_db)):
     if not m.persetujuan:
         raise HTTPException(422, "Pendaftaran wajah memerlukan persetujuan mahasiswa")
@@ -128,7 +283,7 @@ def daftar_mahasiswa(m: MahasiswaBaru, conn=Depends(get_db)):
     return {"nim": m.nim, "nama": m.nama, "prodi": m.prodi}
 
 
-@app.get("/mahasiswa", dependencies=[Aman])
+@app.get("/mahasiswa", dependencies=[Login])
 def daftar_semua_mahasiswa(conn=Depends(get_db)):
     rows = conn.execute(
         "SELECT m.nim, m.nama, m.prodi, COUNT(w.id) AS jumlah_wajah "
@@ -138,9 +293,9 @@ def daftar_semua_mahasiswa(conn=Depends(get_db)):
     return [dict(r) for r in rows]
 
 
-@app.delete("/mahasiswa/{nim}", dependencies=[Aman])
+@app.delete("/mahasiswa/{nim}", dependencies=[Admin])
 def hapus_mahasiswa(nim: str, conn=Depends(get_db)):
-    """Hak penghapusan data: menghapus identitas, embedding wajah, dan riwayat presensi."""
+    """Hak penghapusan data (admin): identitas, embedding wajah, dan riwayat presensi."""
     cur = conn.execute("DELETE FROM mahasiswa WHERE nim = ?", (nim,))
     conn.commit()
     if cur.rowcount == 0:
@@ -148,7 +303,7 @@ def hapus_mahasiswa(nim: str, conn=Depends(get_db)):
     return {"dihapus": nim}
 
 
-@app.post("/mahasiswa/{nim}/wajah", status_code=201, dependencies=[Aman])
+@app.post("/mahasiswa/{nim}/wajah", status_code=201, dependencies=[Login])
 async def daftar_wajah(
     nim: str,
     berkas: UploadFile = File(...),
@@ -177,78 +332,95 @@ async def daftar_wajah(
     return {"nim": nim, "jumlah_wajah": jumlah}
 
 
-@app.post("/sesi", status_code=201, dependencies=[Aman])
-def buka_sesi(s: SesiBaru, conn=Depends(get_db)):
+# ---------- sesi ----------
+
+@app.post("/sesi", status_code=201)
+def buka_sesi(s: SesiBaru, p: Pengguna = Login, conn=Depends(get_db)):
+    """Sesi dimiliki dosen yang membukanya; nama dosen diambil dari akun."""
     cur = conn.execute(
-        "INSERT INTO sesi (kode_mk, nama_mk, ruang, dosen) VALUES (?, ?, ?, ?)",
-        (s.kode_mk, s.nama_mk, s.ruang, s.dosen),
+        "INSERT INTO sesi (kode_mk, nama_mk, ruang, dosen, dosen_id) VALUES (?, ?, ?, ?, ?)",
+        (s.kode_mk, s.nama_mk, s.ruang, p.nama, p.id),
     )
     conn.commit()
-    return dict(ambil_sesi(conn, cur.lastrowid))
+    return dict(ambil_sesi(conn, cur.lastrowid, p))
 
 
-@app.get("/sesi", dependencies=[Aman])
-def daftar_sesi(aktif: bool | None = None, kode_mk: str | None = None, conn=Depends(get_db)):
-    """Daftar sesi terbaru beserta jumlah hadir dan jumlah percobaan palsu."""
-    syarat, arg = [], []
+@app.get("/sesi")
+def daftar_sesi(aktif: bool | None = None, kode_mk: str | None = None,
+                p: Pengguna = Login, conn=Depends(get_db)):
+    """Daftar sesi terbaru (dosen: miliknya; admin: semua) dengan jumlah hadir dan palsu."""
+    syarat, arg = filter_pemilik(p)
+    syarat = [syarat]
     if aktif is not None:
         syarat.append("s.ditutup IS NULL" if aktif else "s.ditutup IS NOT NULL")
     if kode_mk:
         syarat.append("s.kode_mk = ?")
         arg.append(kode_mk)
-    where = f"WHERE {' AND '.join(syarat)}" if syarat else ""
     rows = conn.execute(
         "SELECT s.*, "
         "(SELECT COUNT(*) FROM presensi p WHERE p.sesi_id = s.id) AS jumlah_hadir, "
         "(SELECT COUNT(*) FROM percobaan_palsu f WHERE f.sesi_id = s.id) AS jumlah_palsu "
-        f"FROM sesi s {where} ORDER BY s.id DESC LIMIT 200",
+        f"FROM sesi s WHERE {' AND '.join(syarat)} ORDER BY s.id DESC LIMIT 200",
         arg,
     ).fetchall()
     return [dict(r) for r in rows]
 
 
-@app.get("/ringkasan", dependencies=[Aman])
-def ringkasan(conn=Depends(get_db)):
-    q = lambda sql: conn.execute(sql).fetchone()[0]  # noqa: E731
+@app.get("/ringkasan")
+def ringkasan(p: Pengguna = Login, conn=Depends(get_db)):
+    milik, arg = filter_pemilik(p)
+
+    def q(sql, a=()):
+        return conn.execute(sql, a).fetchone()[0]
+
     return {
         "jumlah_mahasiswa": q("SELECT COUNT(*) FROM mahasiswa"),
         "mahasiswa_tanpa_wajah": q(
             "SELECT COUNT(*) FROM mahasiswa WHERE nim NOT IN (SELECT nim FROM wajah)"
         ),
-        "sesi_aktif": q("SELECT COUNT(*) FROM sesi WHERE ditutup IS NULL"),
+        "sesi_aktif": q(f"SELECT COUNT(*) FROM sesi s WHERE s.ditutup IS NULL AND {milik}", arg),
         "hadir_hari_ini": q(
-            "SELECT COUNT(*) FROM presensi WHERE date(waktu) = date('now', 'localtime')"
+            "SELECT COUNT(*) FROM presensi x JOIN sesi s ON s.id = x.sesi_id "
+            f"WHERE date(x.waktu) = date('now', 'localtime') AND {milik}", arg
         ),
         "palsu_hari_ini": q(
-            "SELECT COUNT(*) FROM percobaan_palsu WHERE date(waktu) = date('now', 'localtime')"
+            "SELECT COUNT(*) FROM percobaan_palsu x JOIN sesi s ON s.id = x.sesi_id "
+            f"WHERE date(x.waktu) = date('now', 'localtime') AND {milik}", arg
         ),
     }
 
 
-@app.get("/rekap", dependencies=[Aman])
-def daftar_mata_kuliah(conn=Depends(get_db)):
+@app.get("/rekap")
+def daftar_mata_kuliah(p: Pengguna = Login, conn=Depends(get_db)):
+    milik, arg = filter_pemilik(p)
     rows = conn.execute(
-        "SELECT kode_mk, nama_mk, COUNT(*) AS jumlah_sesi FROM sesi "
-        "GROUP BY kode_mk ORDER BY kode_mk"
+        "SELECT s.kode_mk, s.nama_mk, COUNT(*) AS jumlah_sesi FROM sesi s "
+        f"WHERE {milik} GROUP BY s.kode_mk ORDER BY s.kode_mk",
+        arg,
     ).fetchall()
     return [dict(r) for r in rows]
 
 
-@app.get("/rekap/{kode_mk}", dependencies=[Aman])
-def rekap_mata_kuliah(kode_mk: str, batas_persen: float = 75.0, conn=Depends(get_db)):
+@app.get("/rekap/{kode_mk}")
+def rekap_mata_kuliah(kode_mk: str, batas_persen: float = 75.0,
+                      p: Pengguna = Login, conn=Depends(get_db)):
     """Rekap kehadiran per mahasiswa untuk satu mata kuliah.
 
-    Peserta = mahasiswa yang pernah tercatat hadir di MK ini (data KRS belum terhubung).
+    Dosen: hanya sesi yang ia buka (kelas paralel dosen lain tidak ikut dihitung).
+    Peserta = mahasiswa yang pernah tercatat hadir (data KRS belum terhubung).
     `memenuhi` = persentase hadir >= `batas_persen` (umumnya syarat ikut ujian akhir).
     """
-    total = conn.execute("SELECT COUNT(*) FROM sesi WHERE kode_mk = ?", (kode_mk,)).fetchone()[0]
+    milik, arg = filter_pemilik(p)
+    total = conn.execute(
+        f"SELECT COUNT(*) FROM sesi s WHERE s.kode_mk = ? AND {milik}", [kode_mk, *arg]
+    ).fetchone()[0]
     if total == 0:
         raise HTTPException(404, "Belum ada sesi untuk mata kuliah ini")
     rows = conn.execute(
-        "SELECT m.nim, m.nama, m.prodi, COUNT(p.id) AS hadir "
-        "FROM presensi p JOIN sesi s ON s.id = p.sesi_id JOIN mahasiswa m ON m.nim = p.nim "
-        "WHERE s.kode_mk = ? GROUP BY m.nim ORDER BY m.nim",
-        (kode_mk,),
+        "SELECT m.nim, m.nama, m.prodi, COUNT(x.id) AS hadir "
+        "FROM presensi x JOIN sesi s ON s.id = x.sesi_id JOIN mahasiswa m ON m.nim = x.nim "
+        f"WHERE s.kode_mk = ? AND {milik} GROUP BY m.nim ORDER BY m.nim",
+        [kode_mk, *arg],
     ).fetchall()
     peserta = []
     for r in rows:
@@ -258,27 +430,31 @@ def rekap_mata_kuliah(kode_mk: str, batas_persen: float = 75.0, conn=Depends(get
             "peserta": peserta}
 
 
-@app.post("/sesi/{sesi_id}/tutup", dependencies=[Aman])
-def tutup_sesi(sesi_id: int, conn=Depends(get_db)):
-    ambil_sesi(conn, sesi_id)
+@app.post("/sesi/{sesi_id}/tutup")
+def tutup_sesi(sesi_id: int, p: Pengguna = Login, conn=Depends(get_db)):
+    ambil_sesi(conn, sesi_id, p)
     conn.execute(
         "UPDATE sesi SET ditutup = datetime('now', 'localtime') "
         "WHERE id = ? AND ditutup IS NULL",
         (sesi_id,),
     )
     conn.commit()
-    return dict(ambil_sesi(conn, sesi_id))
+    return dict(ambil_sesi(conn, sesi_id, p))
 
 
-@app.post("/sesi/{sesi_id}/presensi", dependencies=[Aman])
+@app.post("/sesi/{sesi_id}/presensi")
 async def presensi_dari_gambar(
     sesi_id: int,
     berkas: UploadFile = File(...),
+    p: Pengguna | None = Depends(pengirim_presensi),
     conn=Depends(get_db),
     engine: FaceEngine = Depends(get_engine),
 ):
-    """Kenali semua wajah dalam satu bingkai kamera dan catat kehadirannya."""
-    if ambil_sesi(conn, sesi_id)["ditutup"] is not None:
+    """Kenali semua wajah dalam satu bingkai kamera dan catat kehadirannya.
+
+    Boleh dikirim oleh pemilik sesi/admin (cookie login) atau perangkat kamera (X-API-Key).
+    """
+    if ambil_sesi(conn, sesi_id, p)["ditutup"] is not None:
         raise HTTPException(409, "Sesi sudah ditutup")
     wajah = engine.analisis(await baca_gambar(berkas))
     galeri, label = db.muat_galeri(conn)
@@ -323,15 +499,15 @@ async def presensi_dari_gambar(
     }
 
 
-@app.get("/sesi/{sesi_id}/percobaan-palsu", dependencies=[Aman])
-def daftar_percobaan_palsu(sesi_id: int, conn=Depends(get_db)):
+@app.get("/sesi/{sesi_id}/percobaan-palsu")
+def daftar_percobaan_palsu(sesi_id: int, p: Pengguna = Login, conn=Depends(get_db)):
     """Audit: wajah yang ditolak sebagai foto/layar, beserta NIM yang diduga dipalsukan."""
-    ambil_sesi(conn, sesi_id)
+    ambil_sesi(conn, sesi_id, p)
     rows = conn.execute(
-        "SELECT p.waktu, p.nim_dugaan, m.nama, ROUND(p.skor_hidup, 3) AS skor_hidup, "
-        "ROUND(p.skor_kemiripan, 3) AS skor_kemiripan "
-        "FROM percobaan_palsu p LEFT JOIN mahasiswa m ON m.nim = p.nim_dugaan "
-        "WHERE p.sesi_id = ? ORDER BY p.waktu",
+        "SELECT x.waktu, x.nim_dugaan, m.nama, ROUND(x.skor_hidup, 3) AS skor_hidup, "
+        "ROUND(x.skor_kemiripan, 3) AS skor_kemiripan "
+        "FROM percobaan_palsu x LEFT JOIN mahasiswa m ON m.nim = x.nim_dugaan "
+        "WHERE x.sesi_id = ? ORDER BY x.waktu",
         (sesi_id,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -339,23 +515,23 @@ def daftar_percobaan_palsu(sesi_id: int, conn=Depends(get_db)):
 
 def _rekap(conn: sqlite3.Connection, sesi_id: int) -> list[dict]:
     rows = conn.execute(
-        "SELECT m.nim, m.nama, m.prodi, p.waktu, ROUND(p.skor, 3) AS skor, "
-        "ROUND(p.skor_hidup, 3) AS skor_hidup "
-        "FROM presensi p JOIN mahasiswa m ON m.nim = p.nim "
-        "WHERE p.sesi_id = ? ORDER BY p.waktu",
+        "SELECT m.nim, m.nama, m.prodi, x.waktu, ROUND(x.skor, 3) AS skor, "
+        "ROUND(x.skor_hidup, 3) AS skor_hidup "
+        "FROM presensi x JOIN mahasiswa m ON m.nim = x.nim "
+        "WHERE x.sesi_id = ? ORDER BY x.waktu",
         (sesi_id,),
     ).fetchall()
     return [dict(r) for r in rows]
 
 
-@app.get("/sesi/{sesi_id}/presensi", dependencies=[Aman])
-def rekap_presensi(sesi_id: int, conn=Depends(get_db)):
-    return {"sesi": dict(ambil_sesi(conn, sesi_id)), "hadir": _rekap(conn, sesi_id)}
+@app.get("/sesi/{sesi_id}/presensi")
+def rekap_presensi(sesi_id: int, p: Pengguna = Login, conn=Depends(get_db)):
+    return {"sesi": dict(ambil_sesi(conn, sesi_id, p)), "hadir": _rekap(conn, sesi_id)}
 
 
-@app.get("/sesi/{sesi_id}/presensi.csv", dependencies=[Aman])
-def rekap_presensi_csv(sesi_id: int, conn=Depends(get_db)):
-    ambil_sesi(conn, sesi_id)
+@app.get("/sesi/{sesi_id}/presensi.csv")
+def rekap_presensi_csv(sesi_id: int, p: Pengguna = Login, conn=Depends(get_db)):
+    ambil_sesi(conn, sesi_id, p)
     buf = io.StringIO()
     tulis = csv.DictWriter(buf, fieldnames=["nim", "nama", "prodi", "waktu", "skor", "skor_hidup"])
     tulis.writeheader()
