@@ -4,14 +4,17 @@ import csv
 import io
 import sqlite3
 from functools import lru_cache
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from app import db
 from app.config import Settings, get_settings
 from app.face_engine import FaceEngine, cocokkan, decode_gambar
+
+STATIK = Path(__file__).resolve().parent / "static"
 
 app = FastAPI(
     title="Smart Vision JTEIT - Presensi Wajah",
@@ -95,7 +98,18 @@ def ambil_sesi(conn: sqlite3.Connection, sesi_id: int) -> sqlite3.Row:
 
 @app.get("/kesehatan")
 def kesehatan():
-    return {"status": "ok"}
+    return {"status": "ok", "perlu_api_key": settings().api_key is not None}
+
+
+@app.get("/", include_in_schema=False)
+def beranda():
+    return RedirectResponse("/dasbor")
+
+
+@app.get("/dasbor", include_in_schema=False)
+def dasbor():
+    """Dasbor web dosen (satu halaman; data diambil lewat API dengan X-API-Key)."""
+    return FileResponse(STATIK / "dasbor.html", media_type="text/html")
 
 
 @app.post("/mahasiswa", status_code=201, dependencies=[Aman])
@@ -171,6 +185,77 @@ def buka_sesi(s: SesiBaru, conn=Depends(get_db)):
     )
     conn.commit()
     return dict(ambil_sesi(conn, cur.lastrowid))
+
+
+@app.get("/sesi", dependencies=[Aman])
+def daftar_sesi(aktif: bool | None = None, kode_mk: str | None = None, conn=Depends(get_db)):
+    """Daftar sesi terbaru beserta jumlah hadir dan jumlah percobaan palsu."""
+    syarat, arg = [], []
+    if aktif is not None:
+        syarat.append("s.ditutup IS NULL" if aktif else "s.ditutup IS NOT NULL")
+    if kode_mk:
+        syarat.append("s.kode_mk = ?")
+        arg.append(kode_mk)
+    where = f"WHERE {' AND '.join(syarat)}" if syarat else ""
+    rows = conn.execute(
+        "SELECT s.*, "
+        "(SELECT COUNT(*) FROM presensi p WHERE p.sesi_id = s.id) AS jumlah_hadir, "
+        "(SELECT COUNT(*) FROM percobaan_palsu f WHERE f.sesi_id = s.id) AS jumlah_palsu "
+        f"FROM sesi s {where} ORDER BY s.id DESC LIMIT 200",
+        arg,
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.get("/ringkasan", dependencies=[Aman])
+def ringkasan(conn=Depends(get_db)):
+    q = lambda sql: conn.execute(sql).fetchone()[0]  # noqa: E731
+    return {
+        "jumlah_mahasiswa": q("SELECT COUNT(*) FROM mahasiswa"),
+        "mahasiswa_tanpa_wajah": q(
+            "SELECT COUNT(*) FROM mahasiswa WHERE nim NOT IN (SELECT nim FROM wajah)"
+        ),
+        "sesi_aktif": q("SELECT COUNT(*) FROM sesi WHERE ditutup IS NULL"),
+        "hadir_hari_ini": q(
+            "SELECT COUNT(*) FROM presensi WHERE date(waktu) = date('now', 'localtime')"
+        ),
+        "palsu_hari_ini": q(
+            "SELECT COUNT(*) FROM percobaan_palsu WHERE date(waktu) = date('now', 'localtime')"
+        ),
+    }
+
+
+@app.get("/rekap", dependencies=[Aman])
+def daftar_mata_kuliah(conn=Depends(get_db)):
+    rows = conn.execute(
+        "SELECT kode_mk, nama_mk, COUNT(*) AS jumlah_sesi FROM sesi "
+        "GROUP BY kode_mk ORDER BY kode_mk"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.get("/rekap/{kode_mk}", dependencies=[Aman])
+def rekap_mata_kuliah(kode_mk: str, batas_persen: float = 75.0, conn=Depends(get_db)):
+    """Rekap kehadiran per mahasiswa untuk satu mata kuliah.
+
+    Peserta = mahasiswa yang pernah tercatat hadir di MK ini (data KRS belum terhubung).
+    `memenuhi` = persentase hadir >= `batas_persen` (umumnya syarat ikut ujian akhir).
+    """
+    total = conn.execute("SELECT COUNT(*) FROM sesi WHERE kode_mk = ?", (kode_mk,)).fetchone()[0]
+    if total == 0:
+        raise HTTPException(404, "Belum ada sesi untuk mata kuliah ini")
+    rows = conn.execute(
+        "SELECT m.nim, m.nama, m.prodi, COUNT(p.id) AS hadir "
+        "FROM presensi p JOIN sesi s ON s.id = p.sesi_id JOIN mahasiswa m ON m.nim = p.nim "
+        "WHERE s.kode_mk = ? GROUP BY m.nim ORDER BY m.nim",
+        (kode_mk,),
+    ).fetchall()
+    peserta = []
+    for r in rows:
+        persen = round(100 * r["hadir"] / total, 1)
+        peserta.append({**dict(r), "persen": persen, "memenuhi": persen >= batas_persen})
+    return {"kode_mk": kode_mk, "jumlah_sesi": total, "batas_persen": batas_persen,
+            "peserta": peserta}
 
 
 @app.post("/sesi/{sesi_id}/tutup", dependencies=[Aman])

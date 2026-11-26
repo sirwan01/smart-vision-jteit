@@ -151,3 +151,79 @@ def test_migrasi_basis_data_lama(tmp_path):
     conn = db.connect(p)
     kolom = {r["name"] for r in conn.execute("PRAGMA table_info(presensi)")}
     assert "skor_hidup" in kolom
+
+
+# ---------- dasbor ----------
+
+def _sesi(klien, kode="TIK301"):
+    return klien.post(
+        "/sesi", json={"kode_mk": kode, "nama_mk": "Visi Komputer", "ruang": "GD-301", "dosen": "Dr. X"}
+    ).json()
+
+
+def test_dasbor_disajikan(klien):
+    r = klien.get("/", follow_redirects=True)
+    assert r.status_code == 200 and "Dasbor Presensi Wajah" in r.text
+    assert klien.get("/kesehatan").json() == {"status": "ok", "perlu_api_key": False}
+
+
+def test_dasbor_tetap_terbuka_tapi_data_terkunci(klien, monkeypatch):
+    monkeypatch.setenv("API_KEY", "rahasia-uji")
+    main.settings.cache_clear()
+    assert klien.get("/dasbor").status_code == 200
+    assert klien.get("/kesehatan").json()["perlu_api_key"] is True
+    for path in ("/sesi", "/ringkasan", "/rekap"):
+        assert klien.get(path).status_code == 401
+
+
+def test_daftar_sesi_dan_ringkasan(klien, mesin):
+    klien.post("/mahasiswa", json=MHS)
+    klien.post("/mahasiswa", json={**MHS, "nim": "230210501002", "nama": "Budi"})
+    mesin.wajah = [vektor(1)]
+    klien.post(f"/mahasiswa/{MHS['nim']}/wajah", files=foto())
+
+    s1, s2 = _sesi(klien), _sesi(klien, "TIK302")
+    klien.post(f"/sesi/{s1['id']}/presensi", files=foto())
+    mesin.wajah = [(vektor(1), 0.01)]
+    klien.post(f"/sesi/{s1['id']}/presensi", files=foto())
+    klien.post(f"/sesi/{s2['id']}/tutup")
+
+    semua = klien.get("/sesi").json()
+    assert [s["id"] for s in semua] == [s2["id"], s1["id"]]  # terbaru dulu
+    assert semua[1]["jumlah_hadir"] == 1 and semua[1]["jumlah_palsu"] == 1
+    assert [s["id"] for s in klien.get("/sesi?aktif=true").json()] == [s1["id"]]
+    assert [s["id"] for s in klien.get("/sesi?kode_mk=TIK302").json()] == [s2["id"]]
+
+    r = klien.get("/ringkasan").json()
+    assert r == {"jumlah_mahasiswa": 2, "mahasiswa_tanpa_wajah": 1, "sesi_aktif": 1,
+                 "hadir_hari_ini": 1, "palsu_hari_ini": 1}
+
+
+def test_rekap_mata_kuliah(klien, mesin):
+    budi = {**MHS, "nim": "230210501002", "nama": "Budi"}
+    klien.post("/mahasiswa", json=MHS)
+    klien.post("/mahasiswa", json=budi)
+    mesin.wajah = [vektor(1)]
+    klien.post(f"/mahasiswa/{MHS['nim']}/wajah", files=foto())
+    mesin.wajah = [vektor(2)]
+    klien.post(f"/mahasiswa/{budi['nim']}/wajah", files=foto())
+
+    # 4 sesi: Andi hadir 4x (100%), Budi hadir 2x (50%)
+    for i in range(4):
+        s = _sesi(klien)
+        mesin.wajah = [vektor(1), vektor(2)] if i < 2 else [vektor(1)]
+        klien.post(f"/sesi/{s['id']}/presensi", files=foto())
+        klien.post(f"/sesi/{s['id']}/tutup")
+    _sesi(klien, "LAIN")
+
+    assert klien.get("/rekap").json() == [
+        {"kode_mk": "LAIN", "nama_mk": "Visi Komputer", "jumlah_sesi": 1},
+        {"kode_mk": "TIK301", "nama_mk": "Visi Komputer", "jumlah_sesi": 4},
+    ]
+    r = klien.get("/rekap/TIK301").json()
+    assert r["jumlah_sesi"] == 4 and r["batas_persen"] == 75.0
+    p = {x["nim"]: x for x in r["peserta"]}
+    assert p[MHS["nim"]]["persen"] == 100.0 and p[MHS["nim"]]["memenuhi"] is True
+    assert p[budi["nim"]]["hadir"] == 2 and p[budi["nim"]]["memenuhi"] is False
+    assert klien.get("/rekap/TIK301?batas_persen=50").json()["peserta"][1]["memenuhi"] is True
+    assert klien.get("/rekap/TIDAKADA").status_code == 404

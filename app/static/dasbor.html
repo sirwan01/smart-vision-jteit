@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dasbor Presensi Dosen</title>
+<style>
+:root {
+  --bg: #f5f6f8; --panel: #ffffff; --teks: #1c2430; --redup: #5d6b7c; --garis: #dde2e8;
+  --aksen: #1f5fbf; --aksen-teks: #ffffff; --ok: #1d7a46; --ok-bg: #e3f4ea;
+  --bahaya: #b3261e; --bahaya-bg: #fbe7e6; --waspada: #8a5a00; --waspada-bg: #fff3d6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12161c; --panel: #1b2129; --teks: #e6eaf0; --redup: #9aa7b6; --garis: #2c3540;
+    --aksen: #6ea2ff; --aksen-teks: #0b1220; --ok: #6fd39a; --ok-bg: #173325;
+    --bahaya: #ff8a80; --bahaya-bg: #3a1d1c; --waspada: #f2c062; --waspada-bg: #3a2f14;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12161c; --panel: #1b2129; --teks: #e6eaf0; --redup: #9aa7b6; --garis: #2c3540;
+  --aksen: #6ea2ff; --aksen-teks: #0b1220; --ok: #6fd39a; --ok-bg: #173325;
+  --bahaya: #ff8a80; --bahaya-bg: #3a1d1c; --waspada: #f2c062; --waspada-bg: #3a2f14;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--teks);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { background: var(--panel); border-bottom: 1px solid var(--garis); padding: 12px 16px; }
+.kepala { max-width: 1100px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 8px 16px;
+  align-items: center; justify-content: space-between; }
+h1 { font-size: 18px; margin: 0; }
+.sub { color: var(--redup); font-size: 13px; }
+nav { display: flex; gap: 4px; flex-wrap: wrap; }
+nav button { background: none; border: 1px solid transparent; color: var(--redup); }
+nav button[aria-selected="true"] { color: var(--aksen); border-color: var(--garis); background: var(--bg); }
+main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+.kartu { background: var(--panel); border: 1px solid var(--garis); border-radius: 10px;
+  padding: 16px; margin-bottom: 16px; }
+.kartu h2 { font-size: 16px; margin: 0 0 12px; }
+.kisi { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.stat { background: var(--panel); border: 1px solid var(--garis); border-radius: 10px; padding: 12px 14px; }
+.stat b { display: block; font-size: 26px; font-variant-numeric: tabular-nums; }
+.stat span { color: var(--redup); font-size: 13px; }
+.dua { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); }
+@media (max-width: 800px) { .dua { grid-template-columns: minmax(0, 1fr); } }
+button, .tombol { font: inherit; padding: 7px 12px; border-radius: 7px; cursor: pointer;
+  border: 1px solid var(--garis); background: var(--panel); color: var(--teks); }
+button.utama { background: var(--aksen); color: var(--aksen-teks); border-color: var(--aksen); }
+button.bahaya { color: var(--bahaya); }
+button:disabled { opacity: .5; cursor: default; }
+input, select { font: inherit; padding: 7px 9px; border-radius: 7px; border: 1px solid var(--garis);
+  background: var(--bg); color: var(--teks); width: 100%; }
+label { display: block; font-size: 13px; color: var(--redup); margin-bottom: 8px; }
+label.cek { display: flex; gap: 8px; align-items: flex-start; color: var(--teks); }
+label.cek input { width: auto; margin-top: 3px; }
+.baris { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+.gulir { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--garis); white-space: nowrap; }
+th { color: var(--redup); font-weight: 600; font-size: 13px; }
+td.angka, th.angka { text-align: right; font-variant-numeric: tabular-nums; }
+tr.pilih { cursor: pointer; }
+tr.pilih:hover, tr.aktif { background: var(--bg); }
+.lencana { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 12px; font-weight: 600; }
+.l-ok { background: var(--ok-bg); color: var(--ok); }
+.l-bahaya { background: var(--bahaya-bg); color: var(--bahaya); }
+.l-waspada { background: var(--waspada-bg); color: var(--waspada); }
+.redup { color: var(--redup); }
+.kosong { color: var(--redup); padding: 12px 0; }
+.aksi { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+#pesan { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); max-width: calc(100% - 32px);
+  padding: 10px 16px; border-radius: 8px; background: var(--teks); color: var(--bg); display: none; z-index: 9; }
+video, canvas.pratinjau { width: 100%; max-width: 420px; border-radius: 8px; background: #000; display: block; }
+dialog { border: 1px solid var(--garis); border-radius: 12px; background: var(--panel); color: var(--teks);
+  width: min(460px, calc(100% - 32px)); }
+dialog::backdrop { background: rgba(0,0,0,.45); }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <div class="kepala">
+    <div>
+      <h1>Dasbor Presensi Wajah</h1>
+      <div class="sub">Jurusan Teknik Elektronika dan Teknologi Informasi · FT UNM</div>
+    </div>
+    <nav role="tablist">
+      <button role="tab" data-tab="sesi" aria-selected="true">Sesi</button>
+      <button role="tab" data-tab="mahasiswa" aria-selected="false">Mahasiswa</button>
+      <button role="tab" data-tab="rekap" aria-selected="false">Rekap</button>
+      <button id="keluar" hidden title="Hapus API key dari peramban ini">Keluar</button>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <!-- ================= SESI ================= -->
+  <section id="tab-sesi">
+    <div class="kisi" style="margin-bottom:16px">
+      <div class="stat"><b id="r-aktif">–</b><span>Sesi aktif</span></div>
+      <div class="stat"><b id="r-hadir">–</b><span>Hadir hari ini</span></div>
+      <div class="stat"><b id="r-palsu">–</b><span>Percobaan palsu hari ini</span></div>
+      <div class="stat"><b id="r-mhs">–</b><span>Mahasiswa terdaftar</span></div>
+      <div class="stat"><b id="r-tanpa">–</b><span>Belum ada data wajah</span></div>
+    </div>
+
+    <div class="dua">
+      <div>
+        <div class="kartu">
+          <h2>Buka sesi perkuliahan</h2>
+          <form id="f-sesi">
+            <div class="baris">
+              <label>Kode MK<input name="kode_mk" required placeholder="TIK301"></label>
+              <label>Ruang<input name="ruang" required placeholder="GD-301"></label>
+            </div>
+            <label>Nama mata kuliah<input name="nama_mk" required placeholder="Visi Komputer"></label>
+            <label>Dosen<input name="dosen" required></label>
+            <button class="utama" type="submit">Buka sesi</button>
+          </form>
+        </div>
+        <div class="kartu">
+          <h2>Riwayat sesi</h2>
+          <div class="gulir"><table>
+            <thead><tr><th>MK</th><th>Dibuka</th><th class="angka">Hadir</th><th>Status</th></tr></thead>
+            <tbody id="t-sesi"></tbody>
+          </table></div>
+          <div id="sesi-kosong" class="kosong" hidden>Belum ada sesi.</div>
+        </div>
+      </div>
+
+      <div class="kartu" id="detail">
+        <div id="detail-kosong" class="kosong">Pilih sesi untuk melihat kehadiran.</div>
+        <div id="detail-isi" hidden>
+          <h2 id="d-judul"></h2>
+          <div class="redup" id="d-info"></div>
+          <div class="aksi">
+            <button id="b-kamera" class="utama">Jadikan peramban ini kamera kelas</button>
+            <button id="b-csv">Unduh CSV</button>
+            <button id="b-tutup" class="bahaya">Tutup sesi</button>
+          </div>
+          <div id="kamera-sesi" hidden>
+            <video id="v-sesi" autoplay playsinline muted></video>
+            <p class="redup" id="kamera-status">Mengirim bingkai setiap 3 detik…</p>
+          </div>
+          <h2>Hadir (<span id="d-jml">0</span>)</h2>
+          <div class="gulir"><table>
+            <thead><tr><th>Waktu</th><th>NIM</th><th>Nama</th><th class="angka">Kemiripan</th><th class="angka">Skor hidup</th></tr></thead>
+            <tbody id="t-hadir"></tbody>
+          </table></div>
+          <div id="hadir-kosong" class="kosong" hidden>Belum ada yang tercatat hadir.</div>
+          <h2 style="margin-top:16px">Percobaan palsu (<span id="d-jml-palsu">0</span>)</h2>
+          <div class="gulir"><table>
+            <thead><tr><th>Waktu</th><th>NIM diduga</th><th>Nama</th><th class="angka">Skor hidup</th></tr></thead>
+            <tbody id="t-palsu"></tbody>
+          </table></div>
+          <div id="palsu-kosong" class="kosong" hidden>Tidak ada percobaan foto/layar.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= MAHASISWA ================= -->
+  <section id="tab-mahasiswa" hidden>
+    <div class="dua">
+      <div class="kartu">
+        <h2>Daftarkan mahasiswa</h2>
+        <form id="f-mhs">
+          <label>NIM<input name="nim" required minlength="5" maxlength="20" inputmode="numeric"></label>
+          <label>Nama lengkap<input name="nama" required></label>
+          <label>Program studi
+            <select name="prodi" required>
+              <option>Pendidikan Teknik Elektronika</option>
+              <option>Pendidikan Teknik Informatika dan Komputer</option>
+              <option>Teknik Komputer</option>
+              <option>Teknik Elektronika</option>
+            </select>
+          </label>
+          <label class="cek"><input type="checkbox" name="persetujuan" required>
+            <span>Mahasiswa telah menyetujui pemrosesan data wajahnya untuk presensi
+            (UU No. 27/2022 tentang Pelindungan Data Pribadi).</span></label>
+          <button class="utama" type="submit">Daftarkan</button>
+        </form>
+      </div>
+      <div class="kartu">
+        <h2>Mahasiswa terdaftar (<span id="m-jml">0</span>)</h2>
+        <input id="cari" type="search" placeholder="Cari NIM atau nama" style="margin-bottom:8px">
+        <div class="gulir"><table>
+          <thead><tr><th>NIM</th><th>Nama</th><th>Prodi</th><th class="angka">Foto wajah</th><th></th></tr></thead>
+          <tbody id="t-mhs"></tbody>
+        </table></div>
+        <div id="mhs-kosong" class="kosong" hidden>Belum ada mahasiswa.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= REKAP ================= -->
+  <section id="tab-rekap" hidden>
+    <div class="kartu">
+      <h2>Rekap kehadiran per mata kuliah</h2>
+      <div class="baris" style="align-items:end">
+        <label>Mata kuliah<select id="r-mk"></select></label>
+        <label>Batas minimal hadir (%)<input id="r-batas" type="number" min="0" max="100" value="75"></label>
+      </div>
+      <p class="redup" id="r-info"></p>
+      <div class="gulir"><table>
+        <thead><tr><th>NIM</th><th>Nama</th><th>Prodi</th><th class="angka">Hadir</th><th class="angka">%</th><th>Status</th></tr></thead>
+        <tbody id="t-rekap"></tbody>
+      </table></div>
+      <div id="rekap-kosong" class="kosong" hidden>Belum ada data.</div>
+      <p class="redup" style="font-size:13px">Peserta adalah mahasiswa yang pernah tercatat hadir;
+        daftar KRS belum terhubung dengan SIAKAD.</p>
+    </div>
+  </section>
+</main>
+
+<!-- Dialog API key -->
+<dialog id="d-kunci">
+  <form method="dialog" id="f-kunci">
+    <h2 style="margin-top:0">Masuk dasbor</h2>
+    <p class="redup">Server ini dilindungi API key. Masukkan kunci yang diberikan admin jurusan.</p>
+    <label>API key<input id="i-kunci" type="password" required autocomplete="current-password"></label>
+    <button class="utama" type="submit">Masuk</button>
+  </form>
+</dialog>
+
+<!-- Dialog foto wajah -->
+<dialog id="d-wajah">
+  <h2 style="margin-top:0">Foto wajah <span id="w-nim"></span></h2>
+  <p class="redup">Ambil 3–5 foto langsung dari kamera dengan sudut dan pencahayaan berbeda.
+    Foto dari layar atau cetakan akan ditolak.</p>
+  <video id="v-wajah" autoplay playsinline muted hidden></video>
+  <div class="aksi">
+    <button id="w-kamera" class="utama">Nyalakan kamera</button>
+    <button id="w-ambil" class="utama" hidden>Ambil foto</button>
+    <label class="tombol" style="margin:0;color:var(--teks)">Unggah berkas
+      <input id="w-berkas" type="file" accept="image/*" hidden></label>
+    <button id="w-tutup">Selesai</button>
+  </div>
+  <p id="w-status" class="redup"></p>
+</dialog>
+
+<div id="pesan" role="status" aria-live="polite"></div>
+
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const KUNCI = "presensi_api_key";
+let apiKey = "";
+try { apiKey = sessionStorage.getItem(KUNCI) || ""; } catch (_) {}
+
+function esc(v) {
+  return String(v ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function angka(v, d = 3) { return v == null ? "–" : Number(v).toFixed(d); }
+function jam(w) { return w ? esc(w.slice(11, 16)) : "–"; }
+let pesanTimer;
+function pesan(t, galat = false) {
+  const el = $("#pesan");
+  el.textContent = t; el.style.display = "block";
+  el.style.background = galat ? "var(--bahaya)" : "var(--teks)";
+  clearTimeout(pesanTimer); pesanTimer = setTimeout(() => (el.style.display = "none"), 3500);
+}
+
+async function api(path, opts = {}) {
+  const headers = Object.assign({}, opts.headers || {});
+  if (apiKey) headers["X-API-Key"] = apiKey;
+  if (opts.json !== undefined) {
+    headers["Content-Type"] = "application/json";
+    opts.body = JSON.stringify(opts.json);
+  }
+  const r = await fetch(path, { ...opts, headers });
+  if (r.status === 401) { mintaKunci(); throw new Error("API key diperlukan"); }
+  if (!r.ok) {
+    let d = r.statusText;
+    try { const j = await r.json(); d = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail); } catch (_) {}
+    throw new Error(d);
+  }
+  return opts.raw ? r : r.json();
+}
+
+function mintaKunci() {
+  const d = $("#d-kunci");
+  if (!d.open) d.showModal();
+}
+$("#f-kunci").addEventListener("submit", () => {
+  apiKey = $("#i-kunci").value.trim();
+  try { sessionStorage.setItem(KUNCI, apiKey); } catch (_) {}
+  $("#keluar").hidden = false;
+  muatSemua();
+});
+$("#keluar").addEventListener("click", () => {
+  apiKey = "";
+  try { sessionStorage.removeItem(KUNCI); } catch (_) {}
+  location.reload();
+});
+
+// ---------- tab ----------
+let tabAktif = "sesi";
+document.querySelectorAll("nav [data-tab]").forEach((b) =>
+  b.addEventListener("click", () => {
+    tabAktif = b.dataset.tab;
+    document.querySelectorAll("nav [data-tab]").forEach((x) =>
+      x.setAttribute("aria-selected", String(x === b)));
+    ["sesi", "mahasiswa", "rekap"].forEach((t) => ($("#tab-" + t).hidden = t !== tabAktif));
+    if (tabAktif === "mahasiswa") muatMahasiswa();
+    if (tabAktif === "rekap") muatDaftarMK();
+  }));
+
+// ---------- sesi ----------
+let sesiDipilih = null;
+
+async function muatRingkasan() {
+  const r = await api("/ringkasan");
+  $("#r-aktif").textContent = r.sesi_aktif;
+  $("#r-hadir").textContent = r.hadir_hari_ini;
+  $("#r-palsu").textContent = r.palsu_hari_ini;
+  $("#r-mhs").textContent = r.jumlah_mahasiswa;
+  $("#r-tanpa").textContent = r.mahasiswa_tanpa_wajah;
+}
+
+async function muatSesi() {
+  const daftar = await api("/sesi");
+  $("#sesi-kosong").hidden = daftar.length > 0;
+  $("#t-sesi").innerHTML = daftar.map((s) => `
+    <tr class="pilih ${s.id === sesiDipilih ? "aktif" : ""}" data-id="${s.id}">
+      <td><b>${esc(s.kode_mk)}</b><br><span class="redup">${esc(s.ruang)}</span></td>
+      <td>${esc(s.dibuka.slice(0, 16))}</td>
+      <td class="angka">${s.jumlah_hadir}${s.jumlah_palsu ? ` <span class="lencana l-bahaya" title="Percobaan palsu">${s.jumlah_palsu}</span>` : ""}</td>
+      <td>${s.ditutup ? '<span class="lencana l-waspada">Ditutup</span>' : '<span class="lencana l-ok">Aktif</span>'}</td>
+    </tr>`).join("");
+  document.querySelectorAll("#t-sesi tr").forEach((tr) =>
+    tr.addEventListener("click", () => pilihSesi(Number(tr.dataset.id))));
+}
+
+async function pilihSesi(id) {
+  if (sesiDipilih !== id) hentikanKamera();
+  sesiDipilih = id;
+  document.querySelectorAll("#t-sesi tr").forEach((tr) =>
+    tr.classList.toggle("aktif", Number(tr.dataset.id) === id));
+  await muatDetail();
+}
+
+async function muatDetail() {
+  if (sesiDipilih == null) return;
+  const [r, palsu] = await Promise.all([
+    api(`/sesi/${sesiDipilih}/presensi`),
+    api(`/sesi/${sesiDipilih}/percobaan-palsu`),
+  ]);
+  const s = r.sesi;
+  $("#detail-kosong").hidden = true; $("#detail-isi").hidden = false;
+  $("#d-judul").textContent = `${s.kode_mk} · ${s.nama_mk}`;
+  $("#d-info").textContent = `${s.ruang} · ${s.dosen} · dibuka ${s.dibuka}` +
+    (s.ditutup ? ` · ditutup ${s.ditutup}` : "");
+  $("#b-tutup").hidden = !!s.ditutup;
+  $("#b-kamera").hidden = !!s.ditutup;
+  if (s.ditutup) hentikanKamera();
+  $("#d-jml").textContent = r.hadir.length;
+  $("#hadir-kosong").hidden = r.hadir.length > 0;
+  $("#t-hadir").innerHTML = r.hadir.map((h) => `<tr>
+    <td>${jam(h.waktu)}</td><td>${esc(h.nim)}</td><td>${esc(h.nama)}</td>
+    <td class="angka">${angka(h.skor)}</td><td class="angka">${angka(h.skor_hidup)}</td></tr>`).join("");
+  $("#d-jml-palsu").textContent = palsu.length;
+  $("#palsu-kosong").hidden = palsu.length > 0;
+  $("#t-palsu").innerHTML = palsu.map((p) => `<tr>
+    <td>${jam(p.waktu)}</td><td>${p.nim_dugaan ? esc(p.nim_dugaan) : '<span class="redup">tidak dikenal</span>'}</td>
+    <td>${esc(p.nama || "")}</td><td class="angka">${angka(p.skor_hidup)}</td></tr>`).join("");
+}
+
+$("#f-sesi").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const data = Object.fromEntries(new FormData(e.target));
+  try {
+    const s = await api("/sesi", { method: "POST", json: data });
+    pesan(`Sesi ${s.kode_mk} dibuka`);
+    await Promise.all([muatSesi(), muatRingkasan()]);
+    await pilihSesi(s.id);
+  } catch (err) { pesan(err.message, true); }
+});
+
+$("#b-tutup").addEventListener("click", async () => {
+  if (!confirm("Tutup sesi ini? Presensi tidak dapat ditambah lagi.")) return;
+  try {
+    await api(`/sesi/${sesiDipilih}/tutup`, { method: "POST" });
+    hentikanKamera(); pesan("Sesi ditutup");
+    await Promise.all([muatSesi(), muatDetail(), muatRingkasan()]);
+  } catch (err) { pesan(err.message, true); }
+});
+
+$("#b-csv").addEventListener("click", async () => {
+  try {
+    const r = await api(`/sesi/${sesiDipilih}/presensi.csv`, { raw: true });
+    const url = URL.createObjectURL(await r.blob());
+    const a = Object.assign(document.createElement("a"), { href: url, download: `presensi_sesi_${sesiDipilih}.csv` });
+    a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (err) { pesan(err.message, true); }
+});
+
+// ---------- kamera kelas dari peramban ----------
+let aliranSesi = null, timerKamera = null;
+function jpegDari(video) {
+  const c = document.createElement("canvas");
+  c.width = video.videoWidth; c.height = video.videoHeight;
+  c.getContext("2d").drawImage(video, 0, 0);
+  return new Promise((ok) => c.toBlob(ok, "image/jpeg", 0.9));
+}
+async function nyalakanKamera(video) {
+  if (!navigator.mediaDevices?.getUserMedia)
+    throw new Error("Kamera memerlukan HTTPS atau localhost");
+  const s = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } });
+  video.srcObject = s; await video.play();
+  return s;
+}
+function hentikanKamera() {
+  clearInterval(timerKamera); timerKamera = null;
+  aliranSesi?.getTracks().forEach((t) => t.stop()); aliranSesi = null;
+  $("#kamera-sesi").hidden = true;
+  $("#b-kamera").textContent = "Jadikan peramban ini kamera kelas";
+}
+$("#b-kamera").addEventListener("click", async () => {
+  if (aliranSesi) return hentikanKamera();
+  try {
+    aliranSesi = await nyalakanKamera($("#v-sesi"));
+    $("#kamera-sesi").hidden = false;
+    $("#b-kamera").textContent = "Matikan kamera";
+    const id = sesiDipilih;
+    timerKamera = setInterval(async () => {
+      try {
+        const fd = new FormData();
+        fd.append("berkas", await jpegDari($("#v-sesi")), "bingkai.jpg");
+        const r = await api(`/sesi/${id}/presensi`, { method: "POST", body: fd });
+        const baru = r.dikenali.filter((d) => d.baru_dicatat).length;
+        $("#kamera-status").textContent =
+          `${new Date().toLocaleTimeString("id-ID")} · ${r.jumlah_wajah} wajah, ` +
+          `${r.dikenali.length} dikenali, ${r.ditolak_palsu.length} palsu`;
+        if (baru || r.ditolak_palsu.length) { muatDetail(); muatRingkasan(); }
+      } catch (err) { $("#kamera-status").textContent = "Galat: " + err.message; }
+    }, 3000);
+  } catch (err) { hentikanKamera(); pesan(err.message, true); }
+});
+
+// ---------- mahasiswa ----------
+let semuaMhs = [];
+async function muatMahasiswa() {
+  semuaMhs = await api("/mahasiswa");
+  tampilkanMahasiswa();
+}
+function tampilkanMahasiswa() {
+  const q = $("#cari").value.trim().toLowerCase();
+  const d = semuaMhs.filter((m) => !q || m.nim.includes(q) || m.nama.toLowerCase().includes(q));
+  $("#m-jml").textContent = semuaMhs.length;
+  $("#mhs-kosong").hidden = d.length > 0;
+  $("#t-mhs").innerHTML = d.map((m) => `<tr>
+    <td>${esc(m.nim)}</td><td>${esc(m.nama)}</td><td class="redup">${esc(m.prodi)}</td>
+    <td class="angka">${m.jumlah_wajah ? m.jumlah_wajah : '<span class="lencana l-waspada">0</span>'}</td>
+    <td><button data-wajah="${esc(m.nim)}">Foto wajah</button>
+        <button class="bahaya" data-hapus="${esc(m.nim)}">Hapus</button></td></tr>`).join("");
+  document.querySelectorAll("[data-wajah]").forEach((b) =>
+    b.addEventListener("click", () => bukaWajah(b.dataset.wajah)));
+  document.querySelectorAll("[data-hapus]").forEach((b) =>
+    b.addEventListener("click", () => hapusMahasiswa(b.dataset.hapus)));
+}
+$("#cari").addEventListener("input", tampilkanMahasiswa);
+
+$("#f-mhs").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const data = { nim: f.nim.value.trim(), nama: f.nama.value.trim(), prodi: f.prodi.value,
+                 persetujuan: f.persetujuan.checked };
+  try {
+    await api("/mahasiswa", { method: "POST", json: data });
+    pesan(`${data.nama} terdaftar. Lanjutkan dengan foto wajah.`);
+    f.reset(); await muatMahasiswa(); muatRingkasan();
+    bukaWajah(data.nim);
+  } catch (err) { pesan(err.message, true); }
+});
+
+async function hapusMahasiswa(nim) {
+  if (!confirm(`Hapus ${nim}? Identitas, data wajah, dan riwayat presensinya akan dihapus permanen.`)) return;
+  try {
+    await api(`/mahasiswa/${encodeURIComponent(nim)}`, { method: "DELETE" });
+    pesan(`${nim} dihapus`); await muatMahasiswa(); muatRingkasan();
+  } catch (err) { pesan(err.message, true); }
+}
+
+// ---------- dialog foto wajah ----------
+let nimWajah = null, aliranWajah = null;
+function bukaWajah(nim) {
+  nimWajah = nim;
+  $("#w-nim").textContent = nim; $("#w-status").textContent = "";
+  $("#d-wajah").showModal();
+}
+function tutupKameraWajah() {
+  aliranWajah?.getTracks().forEach((t) => t.stop()); aliranWajah = null;
+  $("#v-wajah").hidden = true; $("#w-ambil").hidden = true; $("#w-kamera").hidden = false;
+}
+async function kirimWajah(blob) {
+  const fd = new FormData(); fd.append("berkas", blob, "wajah.jpg");
+  $("#w-status").textContent = "Memproses…";
+  try {
+    const r = await api(`/mahasiswa/${encodeURIComponent(nimWajah)}/wajah`, { method: "POST", body: fd });
+    $("#w-status").textContent = `Tersimpan. Total foto wajah: ${r.jumlah_wajah}.`;
+  } catch (err) { $("#w-status").textContent = "Ditolak: " + err.message; }
+}
+$("#w-kamera").addEventListener("click", async () => {
+  try {
+    aliranWajah = await nyalakanKamera($("#v-wajah"));
+    $("#v-wajah").hidden = false; $("#w-ambil").hidden = false; $("#w-kamera").hidden = true;
+  } catch (err) { $("#w-status").textContent = err.message; }
+});
+$("#w-ambil").addEventListener("click", async () => kirimWajah(await jpegDari($("#v-wajah"))));
+$("#w-berkas").addEventListener("change", (e) => { if (e.target.files[0]) kirimWajah(e.target.files[0]); e.target.value = ""; });
+$("#w-tutup").addEventListener("click", () => $("#d-wajah").close());
+$("#d-wajah").addEventListener("close", () => { tutupKameraWajah(); if (tabAktif === "mahasiswa") muatMahasiswa(); });
+
+// ---------- rekap ----------
+async function muatDaftarMK() {
+  const mk = await api("/rekap");
+  const pilih = $("#r-mk"), lama = pilih.value;
+  pilih.innerHTML = mk.map((m) =>
+    `<option value="${esc(m.kode_mk)}">${esc(m.kode_mk)} · ${esc(m.nama_mk)} (${m.jumlah_sesi} sesi)</option>`).join("");
+  if (mk.some((m) => m.kode_mk === lama)) pilih.value = lama;
+  if (mk.length) muatRekap(); else { $("#t-rekap").innerHTML = ""; $("#rekap-kosong").hidden = false; $("#r-info").textContent = ""; }
+}
+async function muatRekap() {
+  const kode = $("#r-mk").value; if (!kode) return;
+  const batas = Number($("#r-batas").value) || 0;
+  try {
+    const r = await api(`/rekap/${encodeURIComponent(kode)}?batas_persen=${batas}`);
+    const kurang = r.peserta.filter((p) => !p.memenuhi).length;
+    $("#r-info").textContent = `${r.jumlah_sesi} sesi · ${r.peserta.length} mahasiswa · ${kurang} di bawah ${batas}%`;
+    $("#rekap-kosong").hidden = r.peserta.length > 0;
+    $("#t-rekap").innerHTML = r.peserta.map((p) => `<tr>
+      <td>${esc(p.nim)}</td><td>${esc(p.nama)}</td><td class="redup">${esc(p.prodi)}</td>
+      <td class="angka">${p.hadir}/${r.jumlah_sesi}</td><td class="angka">${p.persen.toFixed(1)}</td>
+      <td>${p.memenuhi ? '<span class="lencana l-ok">Memenuhi</span>' : '<span class="lencana l-bahaya">Kurang</span>'}</td></tr>`).join("");
+  } catch (err) { pesan(err.message, true); }
+}
+$("#r-mk").addEventListener("change", muatRekap);
+$("#r-batas").addEventListener("change", muatRekap);
+
+// ---------- mulai ----------
+async function muatSemua() {
+  try { await Promise.all([muatRingkasan(), muatSesi()]); await muatDetail(); }
+  catch (err) { if (!$("#d-kunci").open) pesan(err.message, true); }
+}
+(async () => {
+  try {
+    const k = await (await fetch("/kesehatan")).json();
+    if (k.perlu_api_key) {
+      $("#keluar").hidden = !apiKey;
+      if (!apiKey) return mintaKunci();
+    }
+  } catch (_) {}
+  muatSemua();
+})();
+// Segarkan otomatis selama tab Sesi terbuka.
+setInterval(() => { if (tabAktif === "sesi" && !document.hidden && !$("#d-kunci").open) muatSemua(); }, 5000);
+</script>
+</body>
+</html>

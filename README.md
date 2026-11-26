@@ -42,7 +42,21 @@ Klien kamera (pada komputer yang terhubung ke webcam atau kamera IP):
 python scripts/kamera_presensi.py --sesi 1 --api http://SERVER:8000 --interval 3
 ```
 
-## Alur penggunaan
+## Dasbor web dosen
+
+Buka `http://SERVER:8000/dasbor` (atau `/`). Bila `API_KEY` diisi, dasbor meminta kunci
+tersebut sekali per tab peramban (disimpan di `sessionStorage`, hilang saat tab ditutup).
+
+| Menu | Fungsi |
+|---|---|
+| **Sesi** | Ringkasan hari ini, buka/tutup sesi, daftar hadir langsung (segar tiap 5 detik), percobaan palsu, unduh CSV |
+| **Kamera kelas dari peramban** | Laptop dosen menjadi kamera presensi: bingkai webcam dikirim tiap 3 detik |
+| **Mahasiswa** | Daftarkan mahasiswa (wajib centang persetujuan), ambil foto wajah lewat webcam atau unggah berkas, cari, hapus data |
+| **Rekap** | Persentase kehadiran per mata kuliah dengan batas minimal yang dapat diatur (bawaan 75%) |
+
+Webcam di peramban hanya berfungsi melalui **HTTPS** atau `localhost`.
+
+## Alur penggunaan (API)
 
 1. **Daftarkan mahasiswa** — `POST /mahasiswa` dengan `persetujuan: true`.
 2. **Daftarkan wajah** — `POST /mahasiswa/{nim}/wajah` (foto berisi tepat satu wajah).
@@ -52,7 +66,8 @@ python scripts/kamera_presensi.py --sesi 1 --api http://SERVER:8000 --interval 3
    mahasiswa dicatat sekali per sesi. Wajah yang terdeteksi sebagai foto/layar
    tidak dicatat dan masuk `ditolak_palsu`.
 5. **Tutup sesi** — `POST /sesi/{id}/tutup`.
-6. **Rekap** — `GET /sesi/{id}/presensi` (JSON) atau `GET /sesi/{id}/presensi.csv`.
+6. **Rekap** — `GET /sesi/{id}/presensi` (JSON) atau `GET /sesi/{id}/presensi.csv`;
+   per mata kuliah: `GET /rekap` dan `GET /rekap/{kode_mk}?batas_persen=75`.
 7. **Audit kecurangan** — `GET /sesi/{id}/percobaan-palsu` menampilkan waktu, skor,
    dan NIM yang diduga dipalsukan.
 
@@ -121,7 +136,7 @@ tentang Pelindungan Data Pribadi. Karena itu:
 
 - [x] Deteksi wajah hidup pasif (*anti-spoofing*) untuk menolak foto/layar ponsel
 - [ ] Deteksi hidup aktif (kedip/gerak kepala) sebagai lapisan kedua
-- [ ] Dasbor web dosen (buka/tutup sesi, rekap per semester)
+- [x] Dasbor web dosen (sesi, kamera peramban, pendaftaran wajah, audit, rekap per MK)
 - [ ] Integrasi SIAKAD UNM dan ekspor ke format rekap jurusan
 - [ ] Autentikasi per pengguna (dosen, admin jurusan)
 - [ ] Evaluasi akurasi pada data mahasiswa JTEIT (TAR/FAR, variasi pencahayaan kelas)
