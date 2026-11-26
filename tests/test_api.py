@@ -71,7 +71,7 @@ def test_alur_presensi_lengkap(klien, mesin):
     rekap = klien.get(f"/sesi/{sesi['id']}/presensi").json()
     assert [h["nim"] for h in rekap["hadir"]] == [MHS["nim"]]
     csv = klien.get(f"/sesi/{sesi['id']}/presensi.csv").text
-    assert csv.splitlines()[0] == "nim,nama,prodi,waktu,skor,skor_hidup" and MHS["nim"] in csv
+    assert csv.splitlines()[0] == "nim,nama,prodi,waktu,skor,skor_hidup,metode" and MHS["nim"] in csv
 
     assert klien.post(f"/sesi/{sesi['id']}/tutup").json()["ditutup"] is not None
     assert klien.post(f"/sesi/{sesi['id']}/presensi", files=foto()).status_code == 409

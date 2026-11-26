@@ -67,6 +67,17 @@ tr.pilih:hover, tr.aktif { background: var(--bg); }
 .l-waspada { background: var(--waspada-bg); color: var(--waspada); }
 .l-info { background: var(--bg); color: var(--aksen); border: 1px solid var(--garis); }
 .akun { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+video.cermin { transform: scaleX(-1); }
+dialog.kios { width: min(720px, calc(100% - 16px)); text-align: center; }
+.kios-petunjuk { font-size: 28px; font-weight: 700; margin: 12px 0 4px; min-height: 1.4em; }
+.kios-panah { font-size: 56px; line-height: 1; height: 60px; color: var(--aksen); }
+.titik-langkah { display: flex; gap: 6px; justify-content: center; margin: 8px 0; }
+.titik-langkah span { width: 12px; height: 12px; border-radius: 50%; background: var(--garis); }
+.titik-langkah span.selesai { background: var(--ok); }
+.titik-langkah span.kini { background: var(--aksen); }
+.kios-hasil { font-size: 20px; font-weight: 600; min-height: 1.5em; }
+.kios-hasil.ok { color: var(--ok); } .kios-hasil.gagal { color: var(--bahaya); }
+#kios-video, #v-wajah { margin: 0 auto; }
 .utama-label { background: var(--aksen); color: var(--aksen-teks) !important; border-color: var(--aksen); }
 .sel-aksi { white-space: normal; min-width: 130px; }
 .tombol-baris { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -129,6 +140,8 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
               <label>Nama mata kuliah<input name="nama_mk" required placeholder="Visi Komputer"></label>
             </div>
             <label>Ruang<input name="ruang" required placeholder="GD-301"></label>
+            <label class="cek"><input type="checkbox" name="wajib_hidup_aktif">
+              <span>Wajibkan verifikasi gerak kepala (presensi hanya lewat mode kios)</span></label>
             <p class="redup" style="font-size:13px;margin:0 0 8px">Sesi dicatat atas nama akun Anda.</p>
             <button class="utama" type="submit">Buka sesi</button>
           </form>
@@ -150,16 +163,17 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
           <div class="redup" id="d-info"></div>
           <div class="aksi">
             <button id="b-kamera" class="utama">Jadikan peramban ini kamera kelas</button>
+            <button id="b-kios" class="utama">Mode kios (verifikasi gerak)</button>
             <button id="b-csv">Unduh CSV</button>
             <button id="b-tutup" class="bahaya">Tutup sesi</button>
           </div>
           <div id="kamera-sesi" hidden>
-            <video id="v-sesi" autoplay playsinline muted></video>
+            <video id="v-sesi" class="cermin" autoplay playsinline muted></video>
             <p class="redup" id="kamera-status">Mengirim bingkai setiap 3 detik…</p>
           </div>
           <h2>Hadir (<span id="d-jml">0</span>)</h2>
           <div class="gulir"><table>
-            <thead><tr><th>Waktu</th><th>NIM</th><th>Nama</th><th class="angka">Kemiripan</th><th class="angka">Skor hidup</th></tr></thead>
+            <thead><tr><th>Waktu</th><th>NIM</th><th>Nama</th><th>Metode</th><th class="angka">Kemiripan</th><th class="angka">Skor hidup</th></tr></thead>
             <tbody id="t-hadir"></tbody>
           </table></div>
           <div id="hadir-kosong" class="kosong" hidden>Belum ada yang tercatat hadir.</div>
@@ -345,15 +359,29 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
   <h2 style="margin-top:0">Foto wajah <span id="w-nim"></span></h2>
   <p class="redup">Ambil 3–5 foto langsung dari kamera dengan sudut dan pencahayaan berbeda.
     Foto dari layar atau cetakan akan ditolak.</p>
-  <video id="v-wajah" autoplay playsinline muted hidden></video>
+  <video id="v-wajah" class="cermin" autoplay playsinline muted hidden></video>
+  <div class="kios-petunjuk" id="w-petunjuk" hidden></div>
   <div class="aksi">
     <button id="w-kamera" class="utama">Nyalakan kamera</button>
-    <button id="w-ambil" class="utama" hidden>Ambil foto</button>
-    <label class="tombol" style="margin:0;color:var(--teks)">Unggah berkas
+    <button id="w-gerak" class="utama" hidden>Simpan dengan verifikasi gerak</button>
+    <button id="w-ambil" hidden>Ambil foto</button>
+    <label class="tombol" id="w-unggah" style="margin:0;color:var(--teks)">Unggah berkas
       <input id="w-berkas" type="file" accept="image/*" hidden></label>
     <button id="w-tutup">Selesai</button>
   </div>
   <p id="w-status" class="redup"></p>
+</dialog>
+
+<!-- Mode kios: presensi mandiri dengan verifikasi gerak kepala -->
+<dialog id="d-kios" class="kios">
+  <h2 style="margin-top:0" id="kios-judul">Presensi mandiri</h2>
+  <video id="kios-video" class="cermin" autoplay playsinline muted></video>
+  <div class="kios-panah" id="kios-panah" aria-hidden="true"></div>
+  <div class="kios-petunjuk" id="kios-petunjuk" role="status" aria-live="assertive">Menyiapkan kamera…</div>
+  <div class="titik-langkah" id="kios-langkah"></div>
+  <p class="redup" id="kios-pesan"></p>
+  <div class="kios-hasil" id="kios-hasil" aria-live="polite"></div>
+  <div class="aksi" style="justify-content:center"><button id="kios-tutup">Tutup mode kios</button></div>
 </dialog>
 
 <div id="pesan" role="status" aria-live="polite"></div>
@@ -396,6 +424,7 @@ async function api(path, opts = {}) {
 // ---------- masuk / keluar ----------
 function tampilkanMasuk() {
   saya = null; hentikanKamera();
+  if ($("#d-kios").open) $("#d-kios").close();
   $("#akun").hidden = true;
   const d = $("#d-masuk");
   if (!d.open) { d.showModal(); d.querySelector("[name=username]").focus(); }
@@ -497,12 +526,15 @@ async function muatDetail() {
   $("#d-info").textContent = `${s.ruang} · ${s.dosen} · dibuka ${s.dibuka}` +
     (s.ditutup ? ` · ditutup ${s.ditutup}` : "");
   $("#b-tutup").hidden = !!s.ditutup;
-  $("#b-kamera").hidden = !!s.ditutup;
+  $("#b-kamera").hidden = !!s.ditutup || !!s.wajib_hidup_aktif;
+  $("#b-kios").hidden = !!s.ditutup;
+  if (s.wajib_hidup_aktif) $("#d-info").textContent += " · wajib verifikasi gerak";
   if (s.ditutup) hentikanKamera();
   $("#d-jml").textContent = r.hadir.length;
   $("#hadir-kosong").hidden = r.hadir.length > 0;
   $("#t-hadir").innerHTML = r.hadir.map((h) => `<tr>
     <td>${jam(h.waktu)}</td><td>${esc(h.nim)}</td><td>${esc(h.nama)}</td>
+    <td>${h.metode === "aktif" ? '<span class="lencana l-ok">Gerak</span>' : '<span class="lencana l-info">Kamera</span>'}</td>
     <td class="angka">${angka(h.skor)}</td><td class="angka">${angka(h.skor_hidup)}</td></tr>`).join("");
   $("#d-jml-palsu").textContent = palsu.length;
   $("#palsu-kosong").hidden = palsu.length > 0;
@@ -536,7 +568,7 @@ $("#s-kelas").addEventListener("change", aturFormSesi);
 $("#f-sesi").addEventListener("submit", async (e) => {
   e.preventDefault();
   const f = e.target;
-  const data = { ruang: f.ruang.value.trim() };
+  const data = { ruang: f.ruang.value.trim(), wajib_hidup_aktif: f.wajib_hidup_aktif.checked };
   if (f.kelas_id.value) data.kelas_id = Number(f.kelas_id.value);
   else { data.kode_mk = f.kode_mk.value.trim(); data.nama_mk = f.nama_mk.value.trim(); }
   try {
@@ -607,6 +639,74 @@ $("#b-kamera").addEventListener("click", async () => {
     }, 3000);
   } catch (err) { hentikanKamera(); pesan(err.message, true); }
 });
+
+// ---------- deteksi hidup aktif ----------
+const tidur = (ms) => new Promise((ok) => setTimeout(ok, ms));
+const PANAH = { tengah: "●", kiri: "←", kanan: "→" };  // pratinjau dicerminkan: kiri Anda = kiri layar
+let konfigurasi = { pendaftaran_wajib_aktif: false };
+
+async function jalankanTantangan(payload, video, tampil, masihAktif) {
+  let r = await api("/hidup/tantangan", { method: "POST", json: payload });
+  tampil(r);
+  while (r.status === "berjalan" && masihAktif()) {
+    await tidur(350);
+    if (!masihAktif()) break;
+    const fd = new FormData();
+    fd.append("berkas", await jpegDari(video), "bingkai.jpg");
+    r = await api(`/hidup/tantangan/${r.id}/bingkai`, { method: "POST", body: fd });
+    tampil(r);
+  }
+  return r;
+}
+function tampilLangkah(wadah, r) {
+  wadah.innerHTML = r.langkah.map((_, i) =>
+    `<span class="${i < r.posisi ? "selesai" : i === r.posisi && r.status === "berjalan" ? "kini" : ""}"></span>`).join("");
+}
+
+let kiosAktif = false, aliranKios = null;
+$("#b-kios").addEventListener("click", async () => {
+  hentikanKamera();
+  const d = $("#d-kios"); d.showModal();
+  $("#kios-judul").textContent = "Presensi mandiri · " + $("#d-judul").textContent;
+  try { aliranKios = await nyalakanKamera($("#kios-video")); }
+  catch (err) { $("#kios-petunjuk").textContent = err.message; return; }
+  kiosAktif = true;
+  const sesi = sesiDipilih;
+  while (kiosAktif) {
+    $("#kios-hasil").textContent = ""; $("#kios-hasil").className = "kios-hasil";
+    try {
+      const r = await jalankanTantangan({ tujuan: "presensi", sesi_id: sesi }, $("#kios-video"), (x) => {
+        $("#kios-petunjuk").textContent = x.petunjuk || "";
+        $("#kios-panah").textContent = PANAH[x.langkah_sekarang] || "";
+        $("#kios-pesan").textContent = x.pesan || `Sisa waktu ${x.sisa_detik} detik`;
+        tampilLangkah($("#kios-langkah"), x);
+      }, () => kiosAktif);
+      if (!kiosAktif) break;
+      const el = $("#kios-hasil"); $("#kios-panah").textContent = "";
+      if (r.status === "lulus" && r.hasil?.dikenali) {
+        el.className = "kios-hasil ok";
+        el.textContent = `✓ ${r.hasil.nama} (${r.hasil.nim}) ${r.hasil.baru_dicatat ? "tercatat hadir" : "sudah tercatat sebelumnya"}`;
+        $("#kios-petunjuk").textContent = "Berhasil"; muatDetail(); muatSesi(); muatRingkasan();
+      } else if (r.status === "lulus") {
+        el.className = "kios-hasil gagal"; el.textContent = "Wajah tidak dikenali. Hubungi dosen.";
+      } else {
+        el.className = "kios-hasil gagal"; el.textContent = "Gagal: " + (r.alasan || "coba lagi");
+      }
+      $("#kios-pesan").textContent = "Mahasiswa berikutnya bersiap…";
+      await tidur(3000);
+    } catch (err) {
+      $("#kios-hasil").className = "kios-hasil gagal"; $("#kios-hasil").textContent = err.message;
+      if (err.message.includes("ditutup") || !saya) break;
+      await tidur(3000);
+    }
+  }
+});
+function tutupKios() {
+  kiosAktif = false;
+  aliranKios?.getTracks().forEach((x) => x.stop()); aliranKios = null;
+}
+$("#kios-tutup").addEventListener("click", () => $("#d-kios").close());
+$("#d-kios").addEventListener("close", tutupKios);
 
 // ---------- mahasiswa ----------
 let semuaMhs = [];
@@ -764,13 +864,30 @@ async function hapusMahasiswa(nim) {
 let nimWajah = null, aliranWajah = null, setelahWajah = null;
 function bukaWajah(nim, muatUlang = null) {
   nimWajah = nim; setelahWajah = muatUlang;
+  $("#w-unggah").hidden = konfigurasi.pendaftaran_wajib_aktif;
   $("#w-nim").textContent = nim; $("#w-status").textContent = "";
   $("#d-wajah").showModal();
 }
+let gerakWajahAktif = false;
 function tutupKameraWajah() {
+  gerakWajahAktif = false;
   aliranWajah?.getTracks().forEach((t) => t.stop()); aliranWajah = null;
-  $("#v-wajah").hidden = true; $("#w-ambil").hidden = true; $("#w-kamera").hidden = false;
+  $("#v-wajah").hidden = true; $("#w-ambil").hidden = true; $("#w-gerak").hidden = true;
+  $("#w-petunjuk").hidden = true; $("#w-kamera").hidden = false;
 }
+$("#w-gerak").addEventListener("click", async () => {
+  if (gerakWajahAktif) return;
+  gerakWajahAktif = true; $("#w-gerak").disabled = true; $("#w-petunjuk").hidden = false;
+  try {
+    const r = await jalankanTantangan({ tujuan: "pendaftaran", nim: nimWajah }, $("#v-wajah"), (x) => {
+      $("#w-petunjuk").textContent = x.status === "berjalan" ? `${PANAH[x.langkah_sekarang] || ""} ${x.petunjuk}` : "";
+      $("#w-status").textContent = x.pesan || (x.status === "berjalan" ? `Langkah ${x.posisi + 1}/${x.langkah.length} · sisa ${x.sisa_detik} dtk` : "");
+    }, () => gerakWajahAktif);
+    if (r.status === "lulus") $("#w-status").textContent = `Tersimpan dengan verifikasi gerak. Total foto wajah: ${r.hasil.jumlah_wajah}.`;
+    else if (gerakWajahAktif) $("#w-status").textContent = "Gagal: " + r.alasan + ". Coba lagi.";
+  } catch (err) { $("#w-status").textContent = "Ditolak: " + err.message; }
+  gerakWajahAktif = false; $("#w-gerak").disabled = false; $("#w-petunjuk").hidden = true;
+});
 async function kirimWajah(blob) {
   const fd = new FormData(); fd.append("berkas", blob, "wajah.jpg");
   $("#w-status").textContent = "Memproses…";
@@ -782,7 +899,8 @@ async function kirimWajah(blob) {
 $("#w-kamera").addEventListener("click", async () => {
   try {
     aliranWajah = await nyalakanKamera($("#v-wajah"));
-    $("#v-wajah").hidden = false; $("#w-ambil").hidden = false; $("#w-kamera").hidden = true;
+    $("#v-wajah").hidden = false; $("#w-gerak").hidden = false; $("#w-kamera").hidden = true;
+    $("#w-ambil").hidden = konfigurasi.pendaftaran_wajib_aktif;
   } catch (err) { $("#w-status").textContent = err.message; }
 });
 $("#w-ambil").addEventListener("click", async () => kirimWajah(await jpegDari($("#v-wajah"))));
@@ -871,6 +989,7 @@ async function muatSemua() {
   catch (err) { if (!$("#d-masuk").open) pesan(err.message, true); }
 }
 (async () => {
+  try { konfigurasi = await (await fetch("/kesehatan")).json(); } catch (_) {}
   try { setelahMasuk(await api("/auth/saya")); } catch (_) { /* dialog masuk sudah tampil */ }
 })();
 // Segarkan otomatis selama tab Sesi terbuka.

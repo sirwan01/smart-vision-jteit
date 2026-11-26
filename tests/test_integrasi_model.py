@@ -4,6 +4,7 @@ Dilewati bila model belum diunduh (python scripts/unduh_model.py) atau foto uji
 belum ada di FOTO_UJI (bawaan data/foto_uji/). Foto uji tidak disimpan di repo:
 - orang_a.jpg, orang_b.jpg : dua orang berbeda (pengenalan)
 - asli.jpg, palsu.jpg      : wajah langsung vs. foto/layar yang difoto ulang (anti-spoofing)
+- menoleh.jpg              : wajah yang jelas menoleh ke samping (deteksi hidup aktif)
 """
 
 import os
@@ -55,3 +56,15 @@ def test_anti_spoofing_membedakan_asli_dan_palsu(mesin):
     assert len(asli) == 1 and len(palsu) == 1
     assert asli[0].skor_hidup >= ambang
     assert palsu[0].skor_hidup < ambang
+
+
+@perlu("asli.jpg", "menoleh.jpg")
+def test_arah_kepala_model_asli(mesin):
+    from app.hidup_aktif import AMBANG_TENGAH, AMBANG_TOLEH, arah_kepala
+
+    depan = mesin.analisis(baca("asli.jpg"))[0]          # foto menghadap kamera
+    assert abs(arah_kepala(depan.landmark)) < AMBANG_TENGAH
+    menoleh = baca("menoleh.jpg")                        # foto yang kepalanya jelas menoleh
+    a = arah_kepala(mesin.analisis(menoleh)[0].landmark)
+    b = arah_kepala(mesin.analisis(cv2.flip(menoleh, 1))[0].landmark)
+    assert abs(a) > AMBANG_TOLEH and abs(b) > AMBANG_TOLEH and a * b < 0  # dicerminkan -> arah berbalik

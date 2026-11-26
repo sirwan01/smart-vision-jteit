@@ -22,6 +22,8 @@ class Settings:
     ambang_hidup: float
     # Paksa atribut Secure pada cookie login (None = otomatis bila HTTPS).
     cookie_aman: bool | None
+    # Wajibkan verifikasi hidup aktif (gerak kepala) saat mendaftarkan wajah.
+    wajib_hidup_aktif_daftar: bool
 
 
 def get_settings() -> Settings:
@@ -34,4 +36,5 @@ def get_settings() -> Settings:
         anti_spoofing=os.getenv("ANTI_SPOOFING", "1").lower() not in ("0", "false", "tidak"),
         ambang_hidup=float(os.getenv("AMBANG_HIDUP", "0.5")),
         cookie_aman={"1": True, "0": False}.get(os.getenv("COOKIE_AMAN", "")),
+        wajib_hidup_aktif_daftar=os.getenv("WAJIB_HIDUP_AKTIF_DAFTAR", "0") == "1",
     )

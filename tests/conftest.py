@@ -22,9 +22,17 @@ class MesinTiruan:
     def analisis(self, gambar):
         hasil = []
         for e in self.wajah:
-            emb, hidup = e if isinstance(e, tuple) else (e, 0.99)
-            hasil.append(WajahTerdeteksi((0, 0, 10, 10), 0.99, emb, hidup))
+            if isinstance(e, dict):  # {"emb", "hidup", "yaw"}
+                emb, hidup, yaw = e["emb"], e.get("hidup", 0.99), e.get("yaw", 0.0)
+            else:
+                (emb, hidup), yaw = (e if isinstance(e, tuple) else (e, 0.99)), 0.0
+            hasil.append(WajahTerdeteksi((0, 0, 10, 10), 0.99, emb, hidup, titik_wajah(yaw)))
         return hasil
+
+
+def titik_wajah(yaw: float) -> np.ndarray:
+    """5 titik wajah buatan (jarak antarmata 20 px) dengan rasio yaw tertentu."""
+    return np.array([[40, 50], [60, 50], [50 + 20 * yaw, 60], [42, 70], [58, 70]], np.float32)
 
 
 def jpg() -> bytes:

@@ -59,6 +59,8 @@ CREATE TABLE IF NOT EXISTS sesi (
     dosen       TEXT NOT NULL,
     dosen_id    INTEGER REFERENCES pengguna(id),
     kelas_id    INTEGER REFERENCES kelas(id),
+    -- 1 = hanya presensi lewat mode kios (verifikasi gerak); kamera kelas pasif ditolak
+    wajib_hidup_aktif INTEGER NOT NULL DEFAULT 0,
     dibuka      TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     ditutup     TEXT
 );
@@ -69,6 +71,7 @@ CREATE TABLE IF NOT EXISTS presensi (
     waktu       TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     skor        REAL NOT NULL,
     skor_hidup  REAL,
+    metode      TEXT NOT NULL DEFAULT 'kamera',  -- 'kamera' (pasif) | 'aktif' (mode kios)
     UNIQUE (sesi_id, nim)
 );
 -- Wajah yang ditolak sebagai palsu (foto/layar) untuk audit integritas akademik.
@@ -87,12 +90,16 @@ def _migrasi(conn: sqlite3.Connection) -> None:
     kolom = {r["name"] for r in conn.execute("PRAGMA table_info(presensi)")}
     if "skor_hidup" not in kolom:
         conn.execute("ALTER TABLE presensi ADD COLUMN skor_hidup REAL")
+    if "metode" not in kolom:
+        conn.execute("ALTER TABLE presensi ADD COLUMN metode TEXT NOT NULL DEFAULT 'kamera'")
     kolom = {r["name"] for r in conn.execute("PRAGMA table_info(sesi)")}
     if "dosen_id" not in kolom:
         # Sesi lama tanpa pemilik hanya terlihat oleh admin.
         conn.execute("ALTER TABLE sesi ADD COLUMN dosen_id INTEGER REFERENCES pengguna(id)")
     if "kelas_id" not in kolom:
         conn.execute("ALTER TABLE sesi ADD COLUMN kelas_id INTEGER REFERENCES kelas(id)")
+    if "wajib_hidup_aktif" not in kolom:
+        conn.execute("ALTER TABLE sesi ADD COLUMN wajib_hidup_aktif INTEGER NOT NULL DEFAULT 0")
     wajib = {r["name"]: r["notnull"] for r in conn.execute("PRAGMA table_info(mahasiswa)")}
     if wajib.get("persetujuan_pada"):
         _longgarkan_persetujuan(conn)

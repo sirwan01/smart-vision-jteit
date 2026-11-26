@@ -22,6 +22,8 @@ class WajahTerdeteksi:
     skor_deteksi: float
     embedding: np.ndarray  # vektor 128 dimensi, ternormalisasi L2
     skor_hidup: float | None = None  # probabilitas wajah asli; None bila anti-spoofing nonaktif
+    # 5 titik wajah YuNet (mata, mata, hidung, sudut mulut x2), bentuk (5, 2)
+    landmark: np.ndarray | None = None
 
 
 def decode_gambar(data: bytes) -> np.ndarray:
@@ -67,7 +69,8 @@ class FaceEngine:
                 emb /= np.linalg.norm(emb) + 1e-12
                 kotak = tuple(int(v) for v in f[:4])
                 hidup = self._hidup.skor(gambar, kotak) if self._hidup else None
-                hasil.append(WajahTerdeteksi(kotak, float(f[-1]), emb, hidup))
+                titik = np.asarray(f[4:14], np.float32).reshape(5, 2)
+                hasil.append(WajahTerdeteksi(kotak, float(f[-1]), emb, hidup, titik))
             return hasil
 
 

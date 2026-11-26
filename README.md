@@ -137,6 +137,29 @@ Pada contoh uji, wajah asli mendapat skor 1,000, sedangkan foto cetak/layar 0,01
 - Topeng 3D dan video *deepfake* berkualitas tinggi di luar cakupan model ini.
 - Ambang perlu dikalibrasi dengan data kelas JTEIT sebelum dipakai resmi.
 
+## Deteksi wajah hidup aktif (verifikasi gerak kepala)
+
+Anti-spoofing pasif tidak dapat membedakan gambar yang dikirim lewat *kamera virtual*.
+Verifikasi aktif menutup celah itu: server memberi **urutan acak** (menghadap depan,
+lalu tiga kali toleh kiri/kanan, masing-masing kembali ke depan; 8 kemungkinan urutan),
+dan hanya maju bila arah kepala pada bingkai sesuai urutan. Arah dihitung dari 5 titik
+wajah YuNet (posisi hidung terhadap kedua mata), jadi tidak perlu model tambahan.
+
+Selama verifikasi server juga memeriksa: tepat satu wajah, **orang yang sama** dari awal
+sampai akhir, anti-spoofing pasif pada bingkai menghadap depan, batas 45 detik, dan
+tantangan hanya sekali pakai. Arah toleh yang salah langsung menggagalkan tantangan.
+
+| Penggunaan | Cara |
+|---|---|
+| **Mode kios** (presensi mandiri bergiliran di laptop/tablet) | Detail sesi → *Mode kios (verifikasi gerak)* |
+| **Sesi wajib verifikasi gerak** | Centang saat membuka sesi; kamera kelas pasif ditolak (409) |
+| **Pendaftaran wajah** | Dialog foto → *Simpan dengan verifikasi gerak*; set `WAJIB_HIDUP_AKTIF_DAFTAR=1` agar unggah foto biasa ditolak |
+
+Daftar hadir mencatat metode presensi (`kamera` atau `aktif`).
+
+> Ambang arah (|yaw| < 0,15 = depan, > 0,35 = menoleh) diturunkan dari foto uji dan
+> perlu dikalibrasi pada uji coba kelas nyata (pencahayaan, jarak, posisi kamera).
+
 ## Konfigurasi (variabel lingkungan)
 
 | Variabel | Bawaan | Keterangan |
@@ -146,6 +169,7 @@ Pada contoh uji, wajah asli mendapat skor 1,000, sedangkan foto cetak/layar 0,01
 | `AMBANG_KEMIRIPAN` | `0.363` | Ambang kosinus SFace; naikkan untuk mengurangi salah kenal |
 | `AMBANG_DETEKSI` | `0.8` | Skor minimum deteksi wajah |
 | `API_KEY` | (kosong) | Kunci perangkat kamera kelas (`X-API-Key`), hanya untuk mengirim bingkai presensi |
+| `WAJIB_HIDUP_AKTIF_DAFTAR` | `0` | `1` = pendaftaran wajah hanya lewat verifikasi gerak kepala |
 | `COOKIE_AMAN` | otomatis | `1` memaksa cookie `Secure` (mis. di balik *reverse proxy* HTTPS), `0` mematikan |
 | `ANTI_SPOOFING` | `1` | `0` untuk menonaktifkan deteksi wajah hidup |
 | `AMBANG_HIDUP` | `0.5` | Probabilitas "asli" minimum; naikkan agar lebih ketat |
@@ -183,7 +207,7 @@ tentang Pelindungan Data Pribadi. Karena itu:
 ## Peta jalan
 
 - [x] Deteksi wajah hidup pasif (*anti-spoofing*) untuk menolak foto/layar ponsel
-- [ ] Deteksi hidup aktif (kedip/gerak kepala) sebagai lapisan kedua
+- [x] Deteksi hidup aktif (gerak kepala acak) untuk mode kios dan pendaftaran wajah
 - [x] Dasbor web dosen (sesi, kamera peramban, pendaftaran wajah, audit, rekap per MK)
 - [x] Impor peserta kelas (KRS) dari CSV
 - [ ] Integrasi langsung SIAKAD UNM dan ekspor ke format rekap jurusan

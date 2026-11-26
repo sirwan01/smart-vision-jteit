@@ -29,7 +29,7 @@ def test_hash_sandi():
 
 def test_dasbor_terbuka_tetapi_data_wajib_login(anonim):
     assert anonim.get("/", follow_redirects=True).status_code == 200
-    assert anonim.get("/kesehatan").json() == {"status": "ok"}
+    assert anonim.get("/kesehatan").json() == {"status": "ok", "pendaftaran_wajib_aktif": False}
     for path in ("/sesi", "/ringkasan", "/rekap", "/mahasiswa", "/auth/saya", "/pengguna"):
         assert anonim.get(path).status_code == 401, path
 

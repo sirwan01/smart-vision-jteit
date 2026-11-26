@@ -13,7 +13,7 @@ from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, Resp
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from app import auth, db
+from app import auth, db, hidup_aktif
 from app.auth import Pengguna
 from app.config import Settings, get_settings
 from app.face_engine import FaceEngine, cocokkan, decode_gambar
@@ -99,6 +99,7 @@ class MahasiswaBaru(BaseModel):
 
 class SesiBaru(BaseModel):
     ruang: str = Field(min_length=1)
+    wajib_hidup_aktif: bool = False  # hanya terima presensi lewat mode kios (gerak kepala)
     kelas_id: int | None = None  # bila diisi, kode & nama MK diambil dari kelas
     kode_mk: str | None = None
     nama_mk: str | None = None
@@ -175,7 +176,7 @@ def filter_pemilik(p: Pengguna, alias: str = "s") -> tuple[str, list]:
 
 @app.get("/kesehatan")
 def kesehatan():
-    return {"status": "ok"}
+    return {"status": "ok", "pendaftaran_wajib_aktif": settings().wajib_hidup_aktif_daftar}
 
 
 @app.get("/", include_in_schema=False)
@@ -362,6 +363,8 @@ async def daftar_wajah(
         raise HTTPException(404, "Mahasiswa tidak ditemukan; daftarkan dulu")
     if m["persetujuan_pada"] is None:
         raise HTTPException(403, "Mahasiswa belum memberi persetujuan biometrik; catat dulu persetujuannya")
+    if settings().wajib_hidup_aktif_daftar:
+        raise HTTPException(403, "Pendaftaran wajah wajib melalui verifikasi gerak kepala")
     wajah = engine.analisis(await baca_gambar(berkas))
     if len(wajah) != 1:
         raise HTTPException(
@@ -380,6 +383,88 @@ async def daftar_wajah(
     conn.commit()
     jumlah = conn.execute("SELECT COUNT(*) FROM wajah WHERE nim = ?", (nim,)).fetchone()[0]
     return {"nim": nim, "jumlah_wajah": jumlah}
+
+
+# ---------- deteksi hidup aktif (tantangan gerak kepala) ----------
+
+class TantanganBaru(BaseModel):
+    tujuan: Literal["presensi", "pendaftaran"]
+    sesi_id: int | None = None   # untuk presensi (mode kios)
+    nim: str | None = None       # untuk pendaftaran wajah
+
+
+def _pemilik(p: Pengguna | None) -> str:
+    return "perangkat" if p is None else f"pengguna:{p.id}"
+
+
+def _cek_target(conn, data_tujuan: str, target: str, p: Pengguna | None) -> None:
+    if data_tujuan == "presensi":
+        if ambil_sesi(conn, int(target), p)["ditutup"] is not None:
+            raise HTTPException(409, "Sesi sudah ditutup")
+    else:
+        if p is None:
+            raise HTTPException(401, "Pendaftaran wajah memerlukan login dosen/admin")
+        m = conn.execute("SELECT persetujuan_pada FROM mahasiswa WHERE nim = ?", (target,)).fetchone()
+        if m is None:
+            raise HTTPException(404, "Mahasiswa tidak ditemukan")
+        if m["persetujuan_pada"] is None:
+            raise HTTPException(403, "Mahasiswa belum memberi persetujuan biometrik")
+
+
+@app.post("/hidup/tantangan", status_code=201)
+def buat_tantangan(data: TantanganBaru, p: Pengguna | None = Depends(pengirim_presensi),
+                   conn=Depends(get_db)):
+    """Buat tantangan gerak kepala acak (berlaku 45 detik, sekali pakai).
+
+    Presensi: oleh pemilik sesi/admin atau perangkat kamera. Pendaftaran: login saja.
+    """
+    target = data.sesi_id if data.tujuan == "presensi" else data.nim
+    if target is None:
+        raise HTTPException(422, "Isi sesi_id untuk presensi atau nim untuk pendaftaran")
+    _cek_target(conn, data.tujuan, str(target), p)
+    return hidup_aktif.pengelola.buat(data.tujuan, str(target), _pemilik(p)).publik()
+
+
+@app.post("/hidup/tantangan/{tantangan_id}/bingkai")
+async def kirim_bingkai_tantangan(
+    tantangan_id: str,
+    berkas: UploadFile = File(...),
+    p: Pengguna | None = Depends(pengirim_presensi),
+    conn=Depends(get_db),
+    engine: FaceEngine = Depends(get_engine),
+):
+    """Nilai satu bingkai; bila urutan selesai, presensi/pendaftaran langsung diproses."""
+    t = hidup_aktif.pengelola.ambil(tantangan_id, _pemilik(p))
+    if t is None:
+        raise HTTPException(404, "Tantangan tidak ditemukan atau kedaluwarsa")
+    wajah = engine.analisis(await baca_gambar(berkas))
+    with hidup_aktif.pengelola.kunci:
+        hasil = hidup_aktif.proses_bingkai(t, wajah, settings().ambang_hidup)
+        selesaikan = t.status == "lulus" and not t.dipakai
+        if selesaikan:
+            t.dipakai = True
+    if not selesaikan:
+        return hasil
+    _cek_target(conn, t.tujuan, t.target, p)
+    emb, hidup = t.embedding_akhir(), t.skor_hidup_akhir()
+    if t.tujuan == "pendaftaran":
+        conn.execute("INSERT INTO wajah (nim, embedding) VALUES (?, ?)", (t.target, emb.tobytes()))
+        conn.commit()
+        jumlah = conn.execute("SELECT COUNT(*) FROM wajah WHERE nim = ?", (t.target,)).fetchone()[0]
+        return {**hasil, "hasil": {"nim": t.target, "jumlah_wajah": jumlah}}
+    galeri, label = db.muat_galeri(conn)
+    nim, skor = cocokkan(emb, galeri, label, settings().ambang_kemiripan)
+    if nim is None:
+        return {**hasil, "hasil": {"dikenali": False, "skor_terbaik": round(skor, 3)}}
+    baru = conn.execute(
+        "INSERT OR IGNORE INTO presensi (sesi_id, nim, skor, skor_hidup, metode) "
+        "VALUES (?, ?, ?, ?, 'aktif')",
+        (int(t.target), nim, skor, hidup),
+    ).rowcount == 1
+    conn.commit()
+    nama = conn.execute("SELECT nama FROM mahasiswa WHERE nim = ?", (nim,)).fetchone()["nama"]
+    return {**hasil, "hasil": {"dikenali": True, "nim": nim, "nama": nama,
+                               "skor": round(skor, 3), "baru_dicatat": baru}}
 
 
 # ---------- kelas & KRS ----------
@@ -558,9 +643,9 @@ def buka_sesi(s: SesiBaru, p: Pengguna = Login, conn=Depends(get_db)):
         if not kode or not nama:
             raise HTTPException(422, "Isi kode & nama MK, atau pilih kelas")
     cur = conn.execute(
-        "INSERT INTO sesi (kode_mk, nama_mk, ruang, dosen, dosen_id, kelas_id) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (kode, nama, s.ruang, p.nama, p.id, s.kelas_id),
+        "INSERT INTO sesi (kode_mk, nama_mk, ruang, dosen, dosen_id, kelas_id, wajib_hidup_aktif) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (kode, nama, s.ruang, p.nama, p.id, s.kelas_id, int(s.wajib_hidup_aktif)),
     )
     conn.commit()
     return dict(ambil_sesi(conn, cur.lastrowid, p))
@@ -677,8 +762,11 @@ async def presensi_dari_gambar(
 
     Boleh dikirim oleh pemilik sesi/admin (cookie login) atau perangkat kamera (X-API-Key).
     """
-    if ambil_sesi(conn, sesi_id, p)["ditutup"] is not None:
+    sesi = ambil_sesi(conn, sesi_id, p)
+    if sesi["ditutup"] is not None:
         raise HTTPException(409, "Sesi sudah ditutup")
+    if sesi["wajib_hidup_aktif"]:
+        raise HTTPException(409, "Sesi ini mewajibkan presensi lewat mode kios (verifikasi gerak)")
     wajah = engine.analisis(await baca_gambar(berkas))
     galeri, label = db.muat_galeri(conn)
     ambang = settings().ambang_kemiripan
@@ -739,7 +827,7 @@ def daftar_percobaan_palsu(sesi_id: int, p: Pengguna = Login, conn=Depends(get_d
 def _rekap(conn: sqlite3.Connection, sesi_id: int) -> list[dict]:
     rows = conn.execute(
         "SELECT m.nim, m.nama, m.prodi, x.waktu, ROUND(x.skor, 3) AS skor, "
-        "ROUND(x.skor_hidup, 3) AS skor_hidup "
+        "ROUND(x.skor_hidup, 3) AS skor_hidup, x.metode "
         "FROM presensi x JOIN mahasiswa m ON m.nim = x.nim "
         "WHERE x.sesi_id = ? ORDER BY x.waktu",
         (sesi_id,),
@@ -769,7 +857,7 @@ def rekap_presensi(sesi_id: int, p: Pengguna = Login, conn=Depends(get_db)):
 def rekap_presensi_csv(sesi_id: int, p: Pengguna = Login, conn=Depends(get_db)):
     ambil_sesi(conn, sesi_id, p)
     buf = io.StringIO()
-    tulis = csv.DictWriter(buf, fieldnames=["nim", "nama", "prodi", "waktu", "skor", "skor_hidup"])
+    tulis = csv.DictWriter(buf, fieldnames=["nim", "nama", "prodi", "waktu", "skor", "skor_hidup", "metode"])
     tulis.writeheader()
     tulis.writerows(_rekap(conn, sesi_id))
     return StreamingResponse(
