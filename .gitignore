@@ -1,0 +1,15 @@
+# Lingkungan Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Data pribadi mahasiswa (foto, embedding wajah, basis data) - JANGAN di-commit
+data/
+*.db
+*.sqlite3
+
+# Model diunduh dengan scripts/unduh_model.py
+models/
+
+.env
