@@ -16,10 +16,15 @@ class MesinTiruan:
     """Pengganti FaceEngine: mengembalikan embedding yang diatur oleh tes."""
 
     def __init__(self):
-        self.wajah: list[np.ndarray] = []
+        # Tiap entri: embedding, atau (embedding, skor_hidup). Bawaan skor_hidup = 0.99.
+        self.wajah: list = []
 
     def analisis(self, gambar):
-        return [WajahTerdeteksi((0, 0, 10, 10), 0.99, e) for e in self.wajah]
+        hasil = []
+        for e in self.wajah:
+            emb, hidup = e if isinstance(e, tuple) else (e, 0.99)
+            hasil.append(WajahTerdeteksi((0, 0, 10, 10), 0.99, emb, hidup))
+        return hasil
 
 
 def jpg() -> bytes:

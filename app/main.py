@@ -31,7 +31,15 @@ def settings() -> Settings:
 @lru_cache
 def get_engine() -> FaceEngine:
     s = settings()
-    return FaceEngine(s.model_dir, s.ambang_deteksi)
+    return FaceEngine(s.model_dir, s.ambang_deteksi, s.anti_spoofing)
+
+
+def tampak_palsu(w) -> bool:
+    return w.skor_hidup is not None and w.skor_hidup < settings().ambang_hidup
+
+
+def bulat(x: float | None) -> float | None:
+    return None if x is None else round(x, 3)
 
 
 def get_db():
@@ -140,6 +148,12 @@ async def daftar_wajah(
         raise HTTPException(
             422, f"Foto pendaftaran harus berisi tepat satu wajah (terdeteksi {len(wajah)})"
         )
+    if tampak_palsu(wajah[0]):
+        raise HTTPException(
+            422,
+            f"Wajah terdeteksi sebagai foto/layar, bukan wajah langsung "
+            f"(skor hidup {wajah[0].skor_hidup:.3f}). Ambil foto langsung dari kamera.",
+        )
     conn.execute(
         "INSERT INTO wajah (nim, embedding) VALUES (?, ?)",
         (nim, wajah[0].embedding.tobytes()),
@@ -185,30 +199,63 @@ async def presensi_dari_gambar(
     galeri, label = db.muat_galeri(conn)
     ambang = settings().ambang_kemiripan
 
-    dikenali, tidak_dikenali = [], []
+    dikenali, tidak_dikenali, ditolak_palsu = [], [], []
     for w in wajah:
         nim, skor = cocokkan(w.embedding, galeri, label, ambang)
+        if tampak_palsu(w):
+            # Foto/layar di depan kamera: tidak dicatat hadir, tetapi diaudit.
+            conn.execute(
+                "INSERT INTO percobaan_palsu (sesi_id, nim_dugaan, skor_hidup, skor_kemiripan) "
+                "VALUES (?, ?, ?, ?)",
+                (sesi_id, nim, w.skor_hidup, skor),
+            )
+            ditolak_palsu.append(
+                {"nim_dugaan": nim, "skor_hidup": bulat(w.skor_hidup), "kotak": w.kotak}
+            )
+            continue
         if nim is None:
             tidak_dikenali.append({"kotak": w.kotak, "skor_terbaik": round(skor, 3)})
             continue
         baru = conn.execute(
-            "INSERT OR IGNORE INTO presensi (sesi_id, nim, skor) VALUES (?, ?, ?)",
-            (sesi_id, nim, skor),
+            "INSERT OR IGNORE INTO presensi (sesi_id, nim, skor, skor_hidup) VALUES (?, ?, ?, ?)",
+            (sesi_id, nim, skor, w.skor_hidup),
         ).rowcount == 1
         dikenali.append(
-            {"nim": nim, "skor": round(skor, 3), "kotak": w.kotak, "baru_dicatat": baru}
+            {
+                "nim": nim,
+                "skor": round(skor, 3),
+                "skor_hidup": bulat(w.skor_hidup),
+                "kotak": w.kotak,
+                "baru_dicatat": baru,
+            }
         )
     conn.commit()
     return {
         "jumlah_wajah": len(wajah),
         "dikenali": dikenali,
         "tidak_dikenali": tidak_dikenali,
+        "ditolak_palsu": ditolak_palsu,
     }
+
+
+@app.get("/sesi/{sesi_id}/percobaan-palsu", dependencies=[Aman])
+def daftar_percobaan_palsu(sesi_id: int, conn=Depends(get_db)):
+    """Audit: wajah yang ditolak sebagai foto/layar, beserta NIM yang diduga dipalsukan."""
+    ambil_sesi(conn, sesi_id)
+    rows = conn.execute(
+        "SELECT p.waktu, p.nim_dugaan, m.nama, ROUND(p.skor_hidup, 3) AS skor_hidup, "
+        "ROUND(p.skor_kemiripan, 3) AS skor_kemiripan "
+        "FROM percobaan_palsu p LEFT JOIN mahasiswa m ON m.nim = p.nim_dugaan "
+        "WHERE p.sesi_id = ? ORDER BY p.waktu",
+        (sesi_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def _rekap(conn: sqlite3.Connection, sesi_id: int) -> list[dict]:
     rows = conn.execute(
-        "SELECT m.nim, m.nama, m.prodi, p.waktu, ROUND(p.skor, 3) AS skor "
+        "SELECT m.nim, m.nama, m.prodi, p.waktu, ROUND(p.skor, 3) AS skor, "
+        "ROUND(p.skor_hidup, 3) AS skor_hidup "
         "FROM presensi p JOIN mahasiswa m ON m.nim = p.nim "
         "WHERE p.sesi_id = ? ORDER BY p.waktu",
         (sesi_id,),
@@ -225,7 +272,7 @@ def rekap_presensi(sesi_id: int, conn=Depends(get_db)):
 def rekap_presensi_csv(sesi_id: int, conn=Depends(get_db)):
     ambil_sesi(conn, sesi_id)
     buf = io.StringIO()
-    tulis = csv.DictWriter(buf, fieldnames=["nim", "nama", "prodi", "waktu", "skor"])
+    tulis = csv.DictWriter(buf, fieldnames=["nim", "nama", "prodi", "waktu", "skor", "skor_hidup"])
     tulis.writeheader()
     tulis.writerows(_rekap(conn, sesi_id))
     return StreamingResponse(

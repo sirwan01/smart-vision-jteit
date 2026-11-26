@@ -17,6 +17,9 @@ class Settings:
     ambang_deteksi: float
     # Bila diisi, setiap permintaan wajib membawa header X-API-Key.
     api_key: str | None
+    # Deteksi wajah hidup (anti-spoofing) dan probabilitas "asli" minimum.
+    anti_spoofing: bool
+    ambang_hidup: float
 
 
 def get_settings() -> Settings:
@@ -26,4 +29,6 @@ def get_settings() -> Settings:
         ambang_kemiripan=float(os.getenv("AMBANG_KEMIRIPAN", "0.363")),
         ambang_deteksi=float(os.getenv("AMBANG_DETEKSI", "0.8")),
         api_key=os.getenv("API_KEY") or None,
+        anti_spoofing=os.getenv("ANTI_SPOOFING", "1").lower() not in ("0", "false", "tidak"),
+        ambang_hidup=float(os.getenv("AMBANG_HIDUP", "0.5")),
     )

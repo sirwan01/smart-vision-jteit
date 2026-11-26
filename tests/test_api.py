@@ -71,7 +71,7 @@ def test_alur_presensi_lengkap(klien, mesin):
     rekap = klien.get(f"/sesi/{sesi['id']}/presensi").json()
     assert [h["nim"] for h in rekap["hadir"]] == [MHS["nim"]]
     csv = klien.get(f"/sesi/{sesi['id']}/presensi.csv").text
-    assert csv.splitlines()[0] == "nim,nama,prodi,waktu,skor" and MHS["nim"] in csv
+    assert csv.splitlines()[0] == "nim,nama,prodi,waktu,skor,skor_hidup" and MHS["nim"] in csv
 
     assert klien.post(f"/sesi/{sesi['id']}/tutup").json()["ditutup"] is not None
     assert klien.post(f"/sesi/{sesi['id']}/presensi", files=foto()).status_code == 409
@@ -98,3 +98,56 @@ def test_api_key(klien, monkeypatch):
     assert klien.get("/mahasiswa").status_code == 401
     assert klien.get("/mahasiswa", headers={"X-API-Key": "rahasia-uji"}).status_code == 200
     assert klien.get("/kesehatan").status_code == 200
+
+
+# ---------- anti-spoofing ----------
+
+def test_foto_pendaftaran_palsu_ditolak(klien, mesin):
+    klien.post("/mahasiswa", json=MHS)
+    mesin.wajah = [(vektor(1), 0.05)]
+    r = klien.post(f"/mahasiswa/{MHS['nim']}/wajah", files=foto())
+    assert r.status_code == 422 and "foto/layar" in r.json()["detail"]
+    assert klien.get("/mahasiswa").json()[0]["jumlah_wajah"] == 0
+
+
+def test_presensi_palsu_tidak_dicatat_tetapi_diaudit(klien, mesin):
+    klien.post("/mahasiswa", json=MHS)
+    mesin.wajah = [vektor(1)]
+    klien.post(f"/mahasiswa/{MHS['nim']}/wajah", files=foto())
+    sesi = klien.post(
+        "/sesi", json={"kode_mk": "A", "nama_mk": "B", "ruang": "C", "dosen": "D"}
+    ).json()
+
+    # teman mengangkat foto/HP berisi wajah Andi ke kamera
+    mesin.wajah = [(vektor(1), 0.02)]
+    r = klien.post(f"/sesi/{sesi['id']}/presensi", files=foto()).json()
+    assert r["dikenali"] == []
+    assert r["ditolak_palsu"][0]["nim_dugaan"] == MHS["nim"]
+    assert klien.get(f"/sesi/{sesi['id']}/presensi").json()["hadir"] == []
+
+    audit = klien.get(f"/sesi/{sesi['id']}/percobaan-palsu").json()
+    assert len(audit) == 1 and audit[0]["nim_dugaan"] == MHS["nim"]
+    assert audit[0]["nama"] == MHS["nama"] and audit[0]["skor_hidup"] == 0.02
+
+    # wajah asli di bingkai berikutnya tetap tercatat hadir
+    mesin.wajah = [(vektor(1), 0.97)]
+    r = klien.post(f"/sesi/{sesi['id']}/presensi", files=foto()).json()
+    assert r["dikenali"][0]["baru_dicatat"] is True
+    assert r["dikenali"][0]["skor_hidup"] == 0.97
+
+
+def test_migrasi_basis_data_lama(tmp_path):
+    import sqlite3
+
+    from app import db
+
+    p = tmp_path / "lama.db"
+    lama = sqlite3.connect(p)
+    lama.executescript(
+        "CREATE TABLE presensi (id INTEGER PRIMARY KEY, sesi_id INTEGER, nim TEXT,"
+        " waktu TEXT, skor REAL, UNIQUE (sesi_id, nim));"
+    )
+    lama.close()
+    conn = db.connect(p)
+    kolom = {r["name"] for r in conn.execute("PRAGMA table_info(presensi)")}
+    assert "skor_hidup" in kolom

@@ -12,6 +12,7 @@ pada sesi perkuliahan yang sedang dibuka.
 ```
 Kamera kelas ──(JPEG tiap n detik)──► API FastAPI ──► YuNet (deteksi wajah)
  scripts/kamera_presensi.py                       └─► SFace (embedding 128-D)
+                                                  └─► MiniFASNet (wajah hidup / anti-spoofing)
                                                   └─► Pencocokan kosinus ≥ 0,363
                                                   └─► SQLite: mahasiswa, wajah, sesi, presensi
 ```
@@ -20,6 +21,7 @@ Kamera kelas ──(JPEG tiap n detik)──► API FastAPI ──► YuNet (det
 |---|---|---|
 | Deteksi wajah | YuNet (OpenCV Zoo, 230 KB) | Cepat di CPU, tahan variasi pose |
 | Pengenalan wajah | SFace (OpenCV Zoo, 37 MB) | Akurasi LFW 99,4%, tanpa GPU/PyTorch |
+| Anti-spoofing | MiniFASNetV2 + V1SE (Silent-Face, 2 × 1,7 MB) | Menolak foto cetak/layar di depan kamera |
 | API | FastAPI | Dokumentasi otomatis di `/docs` |
 | Basis data | SQLite | Cukup untuk skala jurusan; mudah dipindah ke PostgreSQL |
 
@@ -47,9 +49,34 @@ python scripts/kamera_presensi.py --sesi 1 --api http://SERVER:8000 --interval 3
    Disarankan 3–5 foto per mahasiswa dengan pencahayaan dan sudut berbeda.
 3. **Buka sesi** — `POST /sesi` (kode MK, nama MK, ruang, dosen).
 4. **Presensi** — kamera mengirim bingkai ke `POST /sesi/{id}/presensi`; setiap
-   mahasiswa dicatat sekali per sesi.
+   mahasiswa dicatat sekali per sesi. Wajah yang terdeteksi sebagai foto/layar
+   tidak dicatat dan masuk `ditolak_palsu`.
 5. **Tutup sesi** — `POST /sesi/{id}/tutup`.
 6. **Rekap** — `GET /sesi/{id}/presensi` (JSON) atau `GET /sesi/{id}/presensi.csv`.
+7. **Audit kecurangan** — `GET /sesi/{id}/percobaan-palsu` menampilkan waktu, skor,
+   dan NIM yang diduga dipalsukan.
+
+## Deteksi wajah hidup (anti-spoofing)
+
+Setiap wajah dinilai oleh dua model MiniFASNet (skala potong 2,7 dan 4,0); rata-rata
+probabilitas "asli" dibandingkan dengan `AMBANG_HIDUP` (bawaan 0,5).
+
+| Kasus | Perlakuan |
+|---|---|
+| Foto pendaftaran tampak palsu | Ditolak (HTTP 422) |
+| Wajah palsu di kamera kelas | Tidak dicatat hadir; dicatat di `percobaan_palsu` |
+| Wajah asli | Dicatat hadir beserta `skor_hidup` |
+
+Pada contoh uji, wajah asli mendapat skor 1,000, sedangkan foto cetak/layar 0,014–0,075.
+
+**Keterbatasan yang perlu diketahui:**
+- Model mendeteksi wajah yang *difoto ulang* (cetakan atau layar di depan kamera).
+  Ia **tidak** dapat menolak berkas foto digital yang dikirim langsung ke API.
+  Karena itu, isi `API_KEY` dan pastikan hanya kamera kelas yang memegang kuncinya.
+- Wajah yang sangat kecil (jauh dari kamera) dan pencahayaan ekstrem menurunkan
+  keandalan; letakkan kamera agar wajah minimal ±80 piksel.
+- Topeng 3D dan video *deepfake* berkualitas tinggi di luar cakupan model ini.
+- Ambang perlu dikalibrasi dengan data kelas JTEIT sebelum dipakai resmi.
 
 ## Konfigurasi (variabel lingkungan)
 
@@ -60,6 +87,8 @@ python scripts/kamera_presensi.py --sesi 1 --api http://SERVER:8000 --interval 3
 | `AMBANG_KEMIRIPAN` | `0.363` | Ambang kosinus SFace; naikkan untuk mengurangi salah kenal |
 | `AMBANG_DETEKSI` | `0.8` | Skor minimum deteksi wajah |
 | `API_KEY` | (kosong) | Bila diisi, setiap permintaan wajib membawa header `X-API-Key` |
+| `ANTI_SPOOFING` | `1` | `0` untuk menonaktifkan deteksi wajah hidup |
+| `AMBANG_HIDUP` | `0.5` | Probabilitas "asli" minimum; naikkan agar lebih ketat |
 | `TZ` | — | Disarankan `Asia/Makassar` agar waktu presensi sesuai WITA |
 
 ## Pengujian
@@ -69,7 +98,8 @@ pytest -q
 ```
 
 Uji integrasi model asli berjalan bila model sudah diunduh dan folder
-`data/foto_uji/` berisi `orang_a.jpg` dan `orang_b.jpg` (dua orang berbeda).
+`data/foto_uji/` berisi `orang_a.jpg` dan `orang_b.jpg` (dua orang berbeda) serta
+`asli.jpg` dan `palsu.jpg` (wajah langsung vs. foto/layar yang difoto ulang).
 
 ## Pelindungan data pribadi
 
@@ -82,9 +112,15 @@ tentang Pelindungan Data Pribadi. Karena itu:
 - Folder `data/`, berkas `*.db`, dan model **tidak** masuk repositori (`.gitignore`).
 - Untuk penerapan di luar jaringan lokal, isi `API_KEY` dan gunakan HTTPS.
 
+## Lisensi model pihak ketiga
+
+- YuNet, SFace — OpenCV Zoo (Apache-2.0/MIT sesuai kartu model)
+- MiniFASNet — Minivision Silent-Face-Anti-Spoofing (Apache-2.0); ONNX dari yakhyo/face-anti-spoofing (Apache-2.0)
+
 ## Peta jalan
 
-- [ ] Deteksi kehidupan (*anti-spoofing*) untuk menolak foto/layar ponsel
+- [x] Deteksi wajah hidup pasif (*anti-spoofing*) untuk menolak foto/layar ponsel
+- [ ] Deteksi hidup aktif (kedip/gerak kepala) sebagai lapisan kedua
 - [ ] Dasbor web dosen (buka/tutup sesi, rekap per semester)
 - [ ] Integrasi SIAKAD UNM dan ekspor ke format rekap jurusan
 - [ ] Autentikasi per pengguna (dosen, admin jurusan)

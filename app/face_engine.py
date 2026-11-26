@@ -9,6 +9,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from app.liveness import DeteksiHidup
+
 MODEL_DETEKSI = "face_detection_yunet_2023mar.onnx"
 MODEL_PENGENAL = "face_recognition_sface_2021dec.onnx"
 SISI_MAKS = 1280  # gambar lebih besar diperkecil agar cepat di CPU
@@ -19,6 +21,7 @@ class WajahTerdeteksi:
     kotak: tuple[int, int, int, int]  # x, y, lebar, tinggi
     skor_deteksi: float
     embedding: np.ndarray  # vektor 128 dimensi, ternormalisasi L2
+    skor_hidup: float | None = None  # probabilitas wajah asli; None bila anti-spoofing nonaktif
 
 
 def decode_gambar(data: bytes) -> np.ndarray:
@@ -33,7 +36,7 @@ def decode_gambar(data: bytes) -> np.ndarray:
 
 
 class FaceEngine:
-    def __init__(self, model_dir: Path, ambang_deteksi: float = 0.8):
+    def __init__(self, model_dir: Path, ambang_deteksi: float = 0.8, anti_spoofing: bool = True):
         det = Path(model_dir) / MODEL_DETEKSI
         rec = Path(model_dir) / MODEL_PENGENAL
         for p in (det, rec):
@@ -45,6 +48,7 @@ class FaceEngine:
             str(det), "", (320, 320), ambang_deteksi, 0.3, 5000
         )
         self._pengenal = cv2.FaceRecognizerSF.create(str(rec), "")
+        self._hidup = DeteksiHidup(model_dir) if anti_spoofing else None
         # Objek OpenCV tidak aman dipakai paralel; FastAPI menjalankan
         # endpoint sinkron di thread pool.
         self._kunci = threading.Lock()
@@ -61,8 +65,9 @@ class FaceEngine:
                 rapi = self._pengenal.alignCrop(gambar, f)
                 emb = self._pengenal.feature(rapi).flatten().astype(np.float32)
                 emb /= np.linalg.norm(emb) + 1e-12
-                x, y, bw, bh = (int(v) for v in f[:4])
-                hasil.append(WajahTerdeteksi((x, y, bw, bh), float(f[-1]), emb))
+                kotak = tuple(int(v) for v in f[:4])
+                hidup = self._hidup.skor(gambar, kotak) if self._hidup else None
+                hasil.append(WajahTerdeteksi(kotak, float(f[-1]), emb, hidup))
             return hasil
 
 

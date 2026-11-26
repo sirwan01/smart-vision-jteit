@@ -46,6 +46,8 @@ def main() -> None:
                     for d in r.json()["dikenali"]:
                         if d["baru_dicatat"]:
                             print(f"HADIR  {d['nim']}  (skor {d['skor']})")
+                    for d in r.json().get("ditolak_palsu", []):
+                        print(f"PALSU? {d['nim_dugaan'] or '-'}  (skor hidup {d['skor_hidup']})")
                 time.sleep(args.interval)
         except KeyboardInterrupt:
             pass

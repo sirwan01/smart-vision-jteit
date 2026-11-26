@@ -10,6 +10,7 @@ sys.path.insert(0, str(ROOT))
 from app.config import get_settings  # noqa: E402
 
 BASIS = "https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models"
+FAS = "https://github.com/yakhyo/face-anti-spoofing/releases/download/weights"
 MODEL = {
     "face_detection_yunet_2023mar.onnx": (
         f"{BASIS}/face_detection_yunet/face_detection_yunet_2023mar.onnx",
@@ -18,6 +19,15 @@ MODEL = {
     "face_recognition_sface_2021dec.onnx": (
         f"{BASIS}/face_recognition_sface/face_recognition_sface_2021dec.onnx",
         "0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79",
+    ),
+    # Anti-spoofing MiniFASNet (Silent-Face, Apache-2.0)
+    "minifasnet_v2.onnx": (
+        f"{FAS}/MiniFASNetV2.onnx",
+        "b32929adc2d9c34b9486f8c4c7bc97c1b69bc0ea9befefc380e4faae4e463907",
+    ),
+    "minifasnet_v1se.onnx": (
+        f"{FAS}/MiniFASNetV1SE.onnx",
+        "ebab7f90c7833fbccd46d3a555410e78d969db5438e169b6524be444862b3676",
     ),
 }
 
