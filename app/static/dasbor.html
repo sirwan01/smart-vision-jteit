@@ -79,6 +79,10 @@ dialog.kios { width: min(720px, calc(100% - 16px)); text-align: center; }
 .kios-hasil.ok { color: var(--ok); } .kios-hasil.gagal { color: var(--bahaya); }
 #kios-video, #v-wajah { margin: 0 auto; }
 .utama-label { background: var(--aksen); color: var(--aksen-teks) !important; border-color: var(--aksen); }
+#tab-mahasiswa .dua { grid-template-columns: minmax(0, 1fr) minmax(0, 2.2fr); }
+@media (max-width: 800px) { #tab-mahasiswa .dua { grid-template-columns: minmax(0, 1fr); } }
+/* Nama prodi panjang boleh turun baris agar kolom lain tetap terlihat */
+#t-mhs td:nth-child(3), #t-rekap td:nth-child(3) { white-space: normal; min-width: 140px; }
 .sel-aksi { white-space: normal; min-width: 130px; }
 .tombol-baris { display: flex; flex-wrap: wrap; gap: 6px; }
 .tombol-baris button { padding: 5px 10px; font-size: 13px; }
